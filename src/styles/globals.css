@@ -1,0 +1,62 @@
+@import "./tokens.css";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html {
+    max-width: 100%;
+    overflow-x: hidden;
+    color-scheme: dark;
+    font-family: theme("fontFamily.sans");
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    max-width: 100%;
+    overflow-x: hidden;
+    min-width: 320px;
+    min-height: 100vh;
+    margin: 0;
+    background:
+      radial-gradient(circle at 50% -15%, hsl(var(--primary) / 0.12), transparent 28rem),
+      linear-gradient(hsl(var(--border) / 0.18) 1px, transparent 1px),
+      linear-gradient(90deg, hsl(var(--border) / 0.13) 1px, transparent 1px),
+      hsl(var(--background));
+    background-size: auto, 32px 32px, 32px 32px, auto;
+    font-variant-numeric: tabular-nums;
+  }
+
+  #root {
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+
+  button,
+  input,
+  textarea,
+  select {
+    font: inherit;
+  }
+
+  ::selection {
+    background: hsl(var(--primary) / 0.35);
+    color: hsl(var(--foreground));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
