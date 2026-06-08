@@ -25,3 +25,7 @@ export function formatDateTime(value: string) {
 export function formatLatency(ms: number) {
   return `${numberFormatter.format(ms)} ms`;
 }
+
+export function formatEth(value: number) {
+  return `${value.toFixed(4)} ETH`;
+}

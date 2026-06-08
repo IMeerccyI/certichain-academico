@@ -7,13 +7,16 @@ import { StatusBadge } from "@/components/ui/status-badge";
 import { RoleSelector } from "@/components/layout/role-selector";
 import { WalletStatus } from "@/components/web3/wallet-status";
 import { getMockChainHealth } from "@/lib/mock-chain";
+import { mockNetworkConfigs } from "@/lib/web3-mock";
 import { useAppStore } from "@/store/app-store";
 
 export function Topbar() {
   const chainHealth = getMockChainHealth();
   const addToast = useAppStore((state) => state.addToast);
   const currentRouteId = useAppStore((state) => state.currentRouteId);
+  const selectedNetwork = useAppStore((state) => state.selectedNetwork);
   const route = getRouteById(currentRouteId);
+  const network = mockNetworkConfigs[selectedNetwork];
 
   return (
     <header className="flex min-h-12 flex-col gap-2 border-b border-border bg-background/95 px-3 py-1.5 backdrop-blur md:flex-row md:items-center md:justify-between lg:px-4">
@@ -51,7 +54,7 @@ export function Topbar() {
       </div>
       <div className="flex flex-wrap items-center justify-end gap-2">
         <StatusBadge className="hidden lg:inline-flex" tone="online">
-          ETH {chainHealth.consensusLabel}
+          {network.label} · ETH {chainHealth.consensusLabel}
         </StatusBadge>
         <RoleSelector />
         <label className="hidden min-w-[15rem] items-center gap-2 rounded-md border border-border/80 bg-secondary px-3 text-xs text-muted-foreground shadow-[inset_0_1px_0_hsl(var(--foreground)/0.035)] 2xl:flex">
