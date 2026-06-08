@@ -10,10 +10,11 @@ import { getMockChainHealth } from "@/lib/mock-chain";
 import { useAppStore, type ActiveRole } from "@/store/app-store";
 
 const roleLabels: Record<ActiveRole, string> = {
+  academic_admin: "Administrador academico",
+  authorized_issuer: "Universidad emisora",
   auditor: "Auditor",
-  issuer: "Universidad emisora",
   student: "Estudiante",
-  verifier: "Verificador publico",
+  public_verifier: "Verificador publico",
 };
 
 export function ContextPanel() {
@@ -86,7 +87,11 @@ export function ContextPanel() {
             className="mt-3 w-full"
             icon={<ArrowUpRight className="h-4 w-4" aria-hidden="true" />}
             onClick={() => {
-              setRoute(activeRole === "issuer" ? "issue" : "verification");
+              setRoute(
+                activeRole === "authorized_issuer" || activeRole === "academic_admin"
+                  ? "issue"
+                  : "verification",
+              );
               addToast({
                 title: "Accion contextual",
                 description: "La vista cambio segun el rol activo de la demo.",

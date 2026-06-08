@@ -6,9 +6,10 @@ import { useReducedMotion } from "@/hooks/useReducedMotion";
 import { useAppStore, type ActiveRole } from "@/store/app-store";
 
 const roleOptions = [
-  { label: "Universidad emisora", value: "issuer" },
+  { label: "Administrador academico", value: "academic_admin" },
+  { label: "Universidad emisora", value: "authorized_issuer" },
   { label: "Estudiante", value: "student" },
-  { label: "Verificador", value: "verifier" },
+  { label: "Verificador", value: "public_verifier" },
   { label: "Auditor", value: "auditor" },
 ] satisfies Array<{ label: string; value: ActiveRole }>;
 
