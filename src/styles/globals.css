@@ -50,6 +50,16 @@
   }
 }
 
+@layer utilities {
+  .motion-transform {
+    will-change: transform, opacity;
+  }
+
+  .motion-opacity {
+    will-change: opacity;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

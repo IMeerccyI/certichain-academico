@@ -1,17 +1,23 @@
 import { useEffect, useState } from "react";
+import { useAppStore } from "@/store/app-store";
 
 export function useReducedMotion() {
-  const [reducedMotion, setReducedMotion] = useState(false);
+  const settingsReducedMotion = useAppStore((state) => state.settings.reducedMotion);
+  const [systemReducedMotion, setSystemReducedMotion] = useState(false);
 
   useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) {
+      return;
+    }
+
     const query = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const update = () => setReducedMotion(query.matches);
+    const update = () => setSystemReducedMotion(query.matches);
 
     update();
-    query.addEventListener("change", update);
+    query.addEventListener?.("change", update);
 
-    return () => query.removeEventListener("change", update);
+    return () => query.removeEventListener?.("change", update);
   }, []);
 
-  return reducedMotion;
+  return systemReducedMotion || settingsReducedMotion;
 }

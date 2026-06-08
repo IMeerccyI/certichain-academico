@@ -76,6 +76,7 @@ type AppStore = DemoDataState & {
   signStudentReception: (certificateId: string) => Certificate | undefined;
   switchNetwork: (network: NetworkType) => void;
   toggleSidebarPinned: () => void;
+  updateSettings: (settings: Partial<AppSettings>) => void;
   verifyCertificateByCode: (code: string) => VerificationResult;
   verifyCertificateByHash: (hash: string) => VerificationResult;
   verifyCertificateByPdfMock: (content: string | Blob) => Promise<VerificationResult>;
@@ -278,6 +279,18 @@ export const useAppStore = create<AppStore>((set, get) => ({
           ...state.toasts,
           createToast("Red simulada actualizada", `La sesion usa ${network}.`, "info"),
         ],
+      };
+      persistState(next);
+      return next;
+    }),
+  updateSettings: (settings) =>
+    set((state) => {
+      const next = {
+        ...state,
+        settings: {
+          ...state.settings,
+          ...settings,
+        },
       };
       persistState(next);
       return next;

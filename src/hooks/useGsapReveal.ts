@@ -1,6 +1,7 @@
 import { useRef } from "react";
 import { useGSAP } from "@gsap/react";
 import { gsap } from "gsap";
+import { motionPresets, setMotionCompleteState, shouldSkipMotion } from "@/lib/motion";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
 
 export function useGsapReveal<T extends HTMLElement>() {
@@ -15,18 +16,15 @@ export function useGsapReveal<T extends HTMLElement>() {
         return;
       }
 
-      if (reducedMotion) {
-        gsap.set(targets, { opacity: 1, y: 0, clearProps: "opacity,transform" });
+      if (shouldSkipMotion(reducedMotion)) {
+        setMotionCompleteState(targets);
         return;
       }
 
-      gsap.from(targets, {
-        opacity: 0,
-        y: 18,
-        duration: 0.52,
+      gsap.fromTo(targets, motionPresets.cardReveal.from, {
+        ...motionPresets.cardReveal.to,
+        clearProps: "transform,visibility,opacity",
         stagger: 0.055,
-        ease: "power2.out",
-        clearProps: "opacity,transform",
       });
     },
     { scope, dependencies: [reducedMotion], revertOnUpdate: true },

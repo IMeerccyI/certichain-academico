@@ -6,6 +6,7 @@ import { ContextPanel } from "@/components/layout/context-panel";
 import { MobileNav } from "@/components/layout/mobile-nav";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Topbar } from "@/components/layout/topbar";
+import { RouteTransitionBoundary } from "@/components/motion";
 import { AnalyticsPage } from "@/features/analytics/AnalyticsPage";
 import { AuditPage } from "@/features/audit/AuditPage";
 import { CertificatesPage } from "@/features/certificates/CertificatesPage";
@@ -20,8 +21,8 @@ import { StudentsPage } from "@/features/students/StudentsPage";
 import { VerificationPage } from "@/features/verification/VerificationPage";
 import { Web3StatusPage } from "@/features/web3/Web3StatusPage";
 import type { RouteId } from "@/app/routes";
-import { usePageTransition } from "@/hooks/usePageTransition";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
+import { setMotionCompleteState, shouldSkipMotion } from "@/lib/motion";
 import { useAppStore } from "@/store/app-store";
 
 const routeComponents: Record<RouteId, ComponentType> = {
@@ -45,7 +46,6 @@ export function AppShell() {
   const sidebarExpanded = useAppStore((state) => state.sidebarExpanded);
   const ActiveRoute = routeComponents[currentRouteId];
   const shellRef = useRef<HTMLDivElement>(null);
-  const transitionRef = usePageTransition<HTMLElement>(currentRouteId);
   const reducedMotion = useReducedMotion();
   const shellStyle = {
     "--sidebar-width": sidebarExpanded ? "13.75rem" : "4rem",
@@ -57,26 +57,23 @@ export function AppShell() {
         return;
       }
 
-      if (reducedMotion) {
-        gsap.set("[data-shell-sidebar], [data-shell-topbar], [data-layout-reveal]", {
-          clearProps: "all",
-          opacity: 1,
-        });
+      if (shouldSkipMotion(reducedMotion)) {
+        setMotionCompleteState("[data-shell-sidebar], [data-shell-topbar], [data-layout-reveal]");
         return;
       }
 
       const timeline = gsap.timeline({ defaults: { duration: 0.34, ease: "power2.out" } });
 
       timeline
-        .from("[data-shell-sidebar]", { clearProps: "opacity,transform", opacity: 0, x: -14 })
+        .from("[data-shell-sidebar]", { autoAlpha: 0, clearProps: "transform,visibility,opacity", x: -14 })
         .from(
           "[data-shell-topbar]",
-          { clearProps: "opacity,transform", opacity: 0, y: -10 },
+          { autoAlpha: 0, clearProps: "transform,visibility,opacity", y: -10 },
           "<0.05",
         )
         .from(
           "[data-layout-reveal]",
-          { clearProps: "opacity,transform", opacity: 0, y: 12, stagger: 0.055 },
+          { autoAlpha: 0, clearProps: "transform,visibility,opacity", y: 12, stagger: 0.055 },
           "-=0.12",
         );
     },
@@ -95,9 +92,14 @@ export function AppShell() {
           <Topbar />
         </div>
         <div className="mx-auto grid w-full max-w-[112rem] gap-3 px-3 py-3 md:px-4 lg:grid-cols-[minmax(0,1fr)_16rem] lg:px-4 2xl:grid-cols-[minmax(0,1fr)_18rem] 2xl:px-5">
-          <main className="min-w-0" data-layout-reveal ref={transitionRef}>
+          <RouteTransitionBoundary
+            as="main"
+            className="min-w-0"
+            data-layout-reveal
+            routeKey={currentRouteId}
+          >
             <ActiveRoute />
-          </main>
+          </RouteTransitionBoundary>
           <ContextPanel />
         </div>
       </div>

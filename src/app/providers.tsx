@@ -1,15 +1,10 @@
 import type { ReactNode } from "react";
 import * as ToastPrimitive from "@radix-ui/react-toast";
 import * as Tooltip from "@radix-ui/react-tooltip";
-import { useGSAP } from "@gsap/react";
-import { gsap } from "gsap";
 import { AppToasts } from "@/components/ui/toast";
+import { registerMotionSystem } from "@/lib/motion";
 
-gsap.registerPlugin(useGSAP);
-gsap.defaults({
-  duration: 0.45,
-  ease: "power2.out",
-});
+registerMotionSystem();
 
 type AppProvidersProps = {
   children: ReactNode;

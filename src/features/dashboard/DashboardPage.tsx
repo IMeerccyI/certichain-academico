@@ -22,6 +22,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { HashChip } from "@/components/data-display/hash-chip";
 import { MetricCard } from "@/components/data-display/metric-card";
+import { MotionPage } from "@/components/motion";
 import { Modal } from "@/components/ui/modal";
 import {
   certificates,
@@ -33,7 +34,6 @@ import {
 import { formatDateTime, formatLatency, numberFormatter } from "@/lib/formatters";
 import { calculateSha256, normalizeHash, shortenHash } from "@/lib/hash";
 import { getMockChainHealth } from "@/lib/mock-chain";
-import { useGsapReveal } from "@/hooks/useGsapReveal";
 import { cn } from "@/lib/cn";
 import { useAppStore } from "@/store/app-store";
 
@@ -230,7 +230,6 @@ export function DashboardPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [demoHash, setDemoHash] = useState(certificates[0].pdfHash);
   const addToast = useAppStore((state) => state.addToast);
-  const revealRef = useGsapReveal<HTMLDivElement>();
   const chainHealth = getMockChainHealth();
 
   const activeStudents = useMemo(
@@ -256,7 +255,7 @@ export function DashboardPage() {
   };
 
   return (
-    <div className="grid min-w-0 gap-3" ref={revealRef}>
+    <MotionPage className="grid min-w-0 gap-3">
       <section
         className="min-w-0 flex flex-col gap-3 md:flex-row md:items-center md:justify-between"
         data-reveal
@@ -616,6 +615,6 @@ export function DashboardPage() {
           </div>
         </div>
       </Modal>
-    </div>
+    </MotionPage>
   );
 }

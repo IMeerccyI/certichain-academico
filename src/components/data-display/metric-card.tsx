@@ -1,5 +1,6 @@
 import * as Progress from "@radix-ui/react-progress";
 import type { ReactNode } from "react";
+import { AnimatedNumber, MotionCard } from "@/components/motion";
 import { cn } from "@/lib/cn";
 
 type MetricCardProps = {
@@ -40,7 +41,10 @@ export function MetricCard({
   value,
 }: MetricCardProps) {
   return (
-    <article className="min-h-[8.5rem] min-w-0 rounded-lg border border-border bg-card p-3.5 shadow-[inset_0_1px_0_hsl(var(--foreground)/0.04),0_24px_64px_-48px_hsl(var(--shadow-ledger)/1)]">
+    <MotionCard
+      as="article"
+      className="min-h-[8.5rem] min-w-0 rounded-lg border border-border bg-card p-3.5 shadow-[inset_0_1px_0_hsl(var(--foreground)/0.04),0_24px_64px_-48px_hsl(var(--shadow-ledger)/1)]"
+    >
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2">
           <span className={cn("shrink-0", toneClasses[tone])}>{icon}</span>
@@ -50,9 +54,10 @@ export function MetricCard({
       </div>
       <div className="mt-3 grid min-h-[5.2rem] grid-cols-[minmax(0,1fr)_4.65rem] items-end gap-4 rounded-md border border-border/45 bg-black/50 px-3 py-3 shadow-[inset_0_1px_0_hsl(var(--foreground)/0.035),inset_0_-18px_36px_hsl(var(--shadow-ledger)/0.18)]">
         <div className="min-w-0">
-          <p className="font-mono text-3xl font-medium leading-none tracking-tight text-foreground">
-            {value}
-          </p>
+          <AnimatedNumber
+            className="font-mono text-3xl font-medium leading-none tracking-tight text-foreground"
+            value={value}
+          />
           <p className="mt-3 truncate text-xs text-muted-foreground">{detail}</p>
         </div>
         <div className="flex h-16 items-end justify-end gap-1.5">
@@ -79,6 +84,6 @@ export function MetricCard({
           />
         </Progress.Root>
       ) : null}
-    </article>
+    </MotionCard>
   );
 }
