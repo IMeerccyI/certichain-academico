@@ -161,9 +161,36 @@ function buildEvent(
   return {
     id: `event-${state.blockchainEvents.length + 1}-${Date.now()}`,
     type,
-    actor: certificate?.issuerId ?? state.wallet.address,
+    actor:
+      type === "student_received"
+        ? certificate?.studentId ?? state.wallet.address
+        : certificate?.issuerId ?? state.wallet.address,
     actorRole,
     certificateId: certificate?.id,
+    transactionHash,
+    txHash: transactionHash,
+    blockNumber: latestBlock + 1,
+    createdAt: new Date().toISOString(),
+    detail,
+    nodeId: "node-lpz",
+  };
+}
+
+function buildActorEvent(
+  state: DemoDataState,
+  type: BlockchainEvent["type"],
+  actor: string,
+  detail: string,
+  actorRole: Role,
+): BlockchainEvent {
+  const latestBlock = Math.max(...state.blockchainEvents.map((event) => event.blockNumber));
+  const transactionHash = createMockTransaction("0xactor");
+
+  return {
+    id: `event-${type}-${state.blockchainEvents.length + 1}-${Date.now()}`,
+    type,
+    actor,
+    actorRole,
     transactionHash,
     txHash: transactionHash,
     blockNumber: latestBlock + 1,
@@ -451,6 +478,15 @@ export const useAppStore = create<AppStore>((set, get) => ({
   authorizeIssuer: (issuerId) => {
     let updated: Issuer | undefined;
     set((state) => {
+      if (state.activeRole !== "academic_admin") {
+        return {
+          toasts: [
+            ...state.toasts,
+            createToast("Autorizacion bloqueada", "Solo el administrador academico puede activar emisores.", "warning"),
+          ],
+        };
+      }
+
       const next = {
         ...state,
         issuers: state.issuers.map((issuer) => {
@@ -462,6 +498,25 @@ export const useAppStore = create<AppStore>((set, get) => ({
           return updated;
         }),
       };
+
+      if (!updated) {
+        return state;
+      }
+
+      next.blockchainEvents = [
+        buildActorEvent(
+          state,
+          "issuer_authorized",
+          updated.id,
+          `${updated.name} autorizado como emisor academico.`,
+          "academic_admin",
+        ),
+        ...state.blockchainEvents,
+      ];
+      next.toasts = [
+        ...state.toasts,
+        createToast("Emisor activado", `${updated.name} puede emitir y revocar nuevamente.`, "success"),
+      ];
       persistState(next);
       return next;
     });
@@ -470,6 +525,15 @@ export const useAppStore = create<AppStore>((set, get) => ({
   deactivateIssuer: (issuerId) => {
     let updated: Issuer | undefined;
     set((state) => {
+      if (state.activeRole !== "academic_admin") {
+        return {
+          toasts: [
+            ...state.toasts,
+            createToast("Desactivacion bloqueada", "Solo el administrador academico puede desactivar emisores.", "warning"),
+          ],
+        };
+      }
+
       const next = {
         ...state,
         issuers: state.issuers.map((issuer) => {
@@ -481,6 +545,25 @@ export const useAppStore = create<AppStore>((set, get) => ({
           return updated;
         }),
       };
+
+      if (!updated) {
+        return state;
+      }
+
+      next.blockchainEvents = [
+        buildActorEvent(
+          state,
+          "issuer_deactivated",
+          updated.id,
+          `${updated.name} desactivado por control administrativo.`,
+          "academic_admin",
+        ),
+        ...state.blockchainEvents,
+      ];
+      next.toasts = [
+        ...state.toasts,
+        createToast("Emisor desactivado", "Ese wallet ya no puede emitir ni revocar certificados.", "warning"),
+      ];
       persistState(next);
       return next;
     });
@@ -499,6 +582,16 @@ export const useAppStore = create<AppStore>((set, get) => ({
       return undefined;
     }
 
+    if (certificate.receptionSignature) {
+      set((state) => ({
+        toasts: [
+          ...state.toasts,
+          createToast("Recepcion ya firmada", "El certificado ya tiene firma de recepcion registrada.", "info"),
+        ],
+      }));
+      return certificate;
+    }
+
     const updated: Certificate = {
       ...certificate,
       receptionSignature: `student-reception-${certificate.studentId}-${Date.now()}`,
@@ -514,6 +607,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
           ...state.blockchainEvents,
         ],
         certificates: state.certificates.map((item) => (item.id === certificateId ? updated : item)),
+        toasts: [
+          ...state.toasts,
+          createToast("Recepcion firmada", `${updated.code} quedo aceptado por el estudiante.`, "success"),
+        ],
       };
       persistState(next);
       return next;
