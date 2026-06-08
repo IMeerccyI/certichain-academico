@@ -71,7 +71,7 @@ type AppStore = DemoDataState & {
   issueCertificate: (input: CertificateIssueInput) => Promise<Certificate | null>;
   mintAcademicNft: (certificateId: string) => NftAcademicToken | undefined;
   removeToast: (toastId: string) => void;
-  resetDemoData: () => void;
+  resetDemoData: (routeId?: RouteId) => void;
   revokeCertificate: (certificateId: string, reason: string) => Certificate | undefined;
   setActiveRole: (role: Role) => void;
   setActiveRoute: (routeId: RouteId) => void;
@@ -261,10 +261,18 @@ function verificationResult(certificate: Certificate | undefined): VerificationR
 const persisted = readStorage<Partial<ExportedAppState> | null>(STORAGE_KEY, null);
 const initial = createInitialState();
 const persistedParse = persisted ? importedAppStateSchema.safeParse(persisted) : null;
+const persistedData = persistedParse?.success
+  ? (persistedParse.data as Partial<ExportedAppState>)
+  : undefined;
 const hydratedInitial: DemoDataState = persistedParse?.success
   ? {
       ...initial,
-      ...(persistedParse.data as ExportedAppState),
+      ...persistedData,
+      nftAcademicTokens: persistedData?.nftAcademicTokens ?? initial.nftAcademicTokens,
+      settings: {
+        ...initial.settings,
+        ...persistedData?.settings,
+      },
       wallet: initial.wallet,
     }
   : initial;
@@ -742,12 +750,13 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
     return updated;
   },
-  resetDemoData: () =>
+  resetDemoData: (routeId = "dashboard") =>
     set((state) => {
       const next = {
         ...state,
         ...createInitialState(),
-        currentRouteId: "dashboard" as RouteId,
+        activeRoute: routeId,
+        currentRouteId: routeId,
         sidebarExpanded: false,
         sidebarPinned: false,
         toasts: [],
@@ -765,13 +774,18 @@ export const useAppStore = create<AppStore>((set, get) => ({
         return false;
       }
 
-      const imported = result.data as ExportedAppState;
+      const imported = result.data as Partial<ExportedAppState>;
       set((state) => {
         const next = {
           ...state,
           ...imported,
-          currentRouteId: imported.activeRoute,
-          wallet: { ...state.wallet, network: imported.selectedNetwork },
+          nftAcademicTokens: imported.nftAcademicTokens ?? state.nftAcademicTokens,
+          settings: {
+            ...state.settings,
+            ...imported.settings,
+          },
+          currentRouteId: imported.activeRoute ?? state.currentRouteId,
+          wallet: { ...state.wallet, network: imported.selectedNetwork ?? state.selectedNetwork },
         };
         persistState(next);
         return next;

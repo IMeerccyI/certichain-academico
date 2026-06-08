@@ -212,10 +212,14 @@ export type DistributedNode = {
 };
 
 export type AppSettings = {
+  accessibleMode: boolean;
   demoMode: boolean;
+  intenseEffects: boolean;
   reducedMotion: boolean;
   autoPersist: boolean;
   defaultNetwork: NetworkType;
+  presentationMode: boolean;
+  technicalMode: boolean;
   verifierPublicAccess: boolean;
 };
 

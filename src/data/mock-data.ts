@@ -79,10 +79,14 @@ export const blockchainEvents: BlockchainEvent[] = [
 export const ledgerEvents = blockchainEvents;
 
 export const defaultSettings: AppSettings = {
+  accessibleMode: false,
   autoPersist: true,
   defaultNetwork: "sepolia",
   demoMode: true,
+  intenseEffects: true,
+  presentationMode: false,
   reducedMotion: false,
+  technicalMode: false,
   verifierPublicAccess: true,
 };
 
