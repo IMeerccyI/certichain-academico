@@ -893,6 +893,12 @@ export function CertificatesPage() {
                       }
                     />
                     <FieldLine label="Observaciones" value={selectedCertificate.observations} />
+                    {selectedCertificate.revocationReason ? (
+                      <FieldLine
+                        label="Motivo de revocacion"
+                        value={selectedCertificate.revocationReason}
+                      />
+                    ) : null}
                     <FieldLine label="Timestamp" value={formatDateTime(selectedCertificate.updatedAt)} />
                   </DetailSection>
 
