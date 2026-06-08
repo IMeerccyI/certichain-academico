@@ -5,6 +5,7 @@ import {
   certificates,
   defaultSettings,
   issuers,
+  nftAcademicTokens,
   revocationRecords,
   students,
   verificationAttempts,
@@ -24,6 +25,7 @@ import type {
   ExportedAppState,
   Issuer,
   NetworkType,
+  NftAcademicToken,
   RevocationRecord,
   Role,
   Student,
@@ -41,6 +43,7 @@ type DemoDataState = {
   blockchainEvents: BlockchainEvent[];
   certificates: Certificate[];
   issuers: Issuer[];
+  nftAcademicTokens: NftAcademicToken[];
   revocationRecords: RevocationRecord[];
   selectedCertificateId?: string;
   selectedNetwork: NetworkType;
@@ -66,6 +69,7 @@ type AppStore = DemoDataState & {
   exportState: () => string;
   importState: (serialized: string) => boolean;
   issueCertificate: (input: CertificateIssueInput) => Promise<Certificate | null>;
+  mintAcademicNft: (certificateId: string) => NftAcademicToken | undefined;
   removeToast: (toastId: string) => void;
   resetDemoData: () => void;
   revokeCertificate: (certificateId: string, reason: string) => Certificate | undefined;
@@ -104,6 +108,7 @@ function createInitialState(): DemoDataState {
     blockchainEvents: cloneData(blockchainEvents),
     certificates: cloneData(certificates),
     issuers: cloneData(issuers),
+    nftAcademicTokens: cloneData(nftAcademicTokens),
     revocationRecords: cloneData(revocationRecords),
     selectedCertificateId: certificates[0]?.id,
     selectedNetwork: "sepolia",
@@ -122,6 +127,7 @@ function toExportedState(state: DemoDataState): ExportedAppState {
     blockchainEvents: state.blockchainEvents,
     certificates: state.certificates,
     issuers: state.issuers,
+    nftAcademicTokens: state.nftAcademicTokens,
     selectedCertificateId: state.selectedCertificateId,
     selectedNetwork: state.selectedNetwork,
     settings: state.settings,
@@ -198,6 +204,40 @@ function buildActorEvent(
     detail,
     nodeId: "node-lpz",
   };
+}
+
+function buildNftMintEvent(
+  state: DemoDataState,
+  certificate: Certificate,
+  token: NftAcademicToken,
+  actorRole: Role,
+): BlockchainEvent {
+  const latestBlock = Math.max(...state.blockchainEvents.map((event) => event.blockNumber));
+
+  return {
+    id: `event-nft-minted-${token.tokenId}-${Date.now()}`,
+    type: "nft_minted",
+    actor: certificate.issuerId,
+    actorRole,
+    certificateId: certificate.id,
+    transactionHash: token.transactionHash,
+    txHash: token.transactionHash,
+    blockNumber: latestBlock + 1,
+    createdAt: token.mintedAt,
+    detail: `NFT ${token.tokenId} minteado y asociado a ${certificate.code}.`,
+    nodeId: "node-lpz",
+  };
+}
+
+function nextNftTokenId(tokens: NftAcademicToken[]) {
+  const highest = tokens.reduce((currentHighest, token) => {
+    const match = token.tokenId.match(/(\d+)$/);
+    const numericId = match ? Number(match[1]) : 0;
+
+    return Math.max(currentHighest, numericId);
+  }, 0);
+
+  return `NFT-ACAD-${String(highest + 1).padStart(4, "0")}`;
 }
 
 function verificationResult(certificate: Certificate | undefined): VerificationResult {
@@ -405,6 +445,90 @@ export const useAppStore = create<AppStore>((set, get) => ({
     });
 
     return certificate;
+  },
+  mintAcademicNft: (certificateId) => {
+    const state = get();
+    const certificate = state.certificates.find((item) => item.id === certificateId);
+
+    if (!certificate) {
+      return undefined;
+    }
+
+    const existingToken = state.nftAcademicTokens.find(
+      (token) => token.certificateId === certificateId || token.tokenId === certificate.nftTokenId,
+    );
+
+    if (existingToken) {
+      set((current) => ({
+        toasts: [
+          ...current.toasts,
+          createToast("NFT ya asociado", `${certificate.code} ya tiene token ERC-721 mock.`, "info"),
+        ],
+      }));
+      return existingToken;
+    }
+
+    if (certificate.status !== "valid") {
+      set((current) => ({
+        toasts: [
+          ...current.toasts,
+          createToast("Mint bloqueado", "Solo certificados validos pueden tokenizarse.", "warning"),
+        ],
+      }));
+      return undefined;
+    }
+
+    if (!["academic_admin", "authorized_issuer"].includes(state.activeRole)) {
+      set((current) => ({
+        toasts: [
+          ...current.toasts,
+          createToast("Mint bloqueado", "El rol activo no puede mintear credenciales academicas.", "warning"),
+        ],
+      }));
+      return undefined;
+    }
+
+    const mintedAt = new Date().toISOString();
+    const tokenId = nextNftTokenId(state.nftAcademicTokens);
+    const transactionHash = createMockTransaction("0xnft");
+    const token: NftAcademicToken = {
+      id: `nft-academic-token-${String(state.nftAcademicTokens.length + 1).padStart(3, "0")}-${Date.now()}`,
+      tokenId,
+      certificateId,
+      ownerStudentId: certificate.studentId,
+      contractAddress: "0x7777777777777777777777777777777777777777",
+      metadataUri: `ipfs://certichain-academico/${certificate.id}.json`,
+      mintedAt,
+      transactionHash,
+    };
+    const updatedCertificate: Certificate = {
+      ...certificate,
+      nftTokenId: tokenId,
+      updatedAt: mintedAt,
+    };
+
+    set((current) => {
+      const next = {
+        ...current,
+        blockchainEvents: [
+          buildNftMintEvent(current, updatedCertificate, token, current.activeRole),
+          ...current.blockchainEvents,
+        ],
+        certificates: current.certificates.map((item) =>
+          item.id === certificateId ? updatedCertificate : item,
+        ),
+        nftAcademicTokens: [token, ...current.nftAcademicTokens],
+        selectedCertificateId: certificateId,
+        toasts: [
+          ...current.toasts,
+          createToast("NFT academico minteado", `${tokenId} quedo asociado a ${certificate.code}.`, "success"),
+        ],
+      };
+      persistState(next);
+      return next;
+    });
+
+    return token;
   },
   verifyCertificateByCode: (code) => {
     const certificate = get().certificates.find((item) => item.code === code.trim());

@@ -52,6 +52,9 @@ export const importedAppStateSchema = z.object({
   certificates: z.array(z.object({ id: z.string(), code: z.string() }).passthrough()).min(1),
   students: z.array(z.object({ id: z.string(), fullName: z.string() }).passthrough()).min(1),
   issuers: z.array(z.object({ id: z.string(), active: z.boolean() }).passthrough()).min(1),
+  nftAcademicTokens: z
+    .array(z.object({ id: z.string(), certificateId: z.string(), tokenId: z.string() }).passthrough())
+    .optional(),
   verifierEntities: z.array(z.object({ id: z.string(), name: z.string() }).passthrough()).min(1),
   blockchainEvents: z
     .array(z.object({ id: z.string(), transactionHash: z.string() }).passthrough())

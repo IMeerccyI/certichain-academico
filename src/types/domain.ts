@@ -254,6 +254,7 @@ export type ExportedAppState = {
   blockchainEvents: BlockchainEvent[];
   certificates: Certificate[];
   issuers: Issuer[];
+  nftAcademicTokens: NftAcademicToken[];
   selectedCertificateId?: string;
   selectedNetwork: NetworkType;
   settings: AppSettings;
