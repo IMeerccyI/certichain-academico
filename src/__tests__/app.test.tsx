@@ -3,15 +3,16 @@ import { describe, expect, it } from "vitest";
 import App from "@/app/App";
 
 describe("CertiChain application shell", () => {
-  it("renders the reference-style certificate pipeline dashboard", () => {
+  it("renders the operational academic blockchain dashboard", () => {
     render(<App />);
 
     expect(
-      screen.getByRole("heading", { name: /academic certificate pipeline/i }),
+      screen.getByRole("heading", { name: /certichain academico/i }),
     ).toBeInTheDocument();
-    expect(screen.getByText(/endpoint traffic & health/i)).toBeInTheDocument();
-    expect(screen.getByText(/active certificate architecture/i)).toBeInTheDocument();
-    expect(screen.getByText(/guardrail exceptions/i)).toBeInTheDocument();
+    expect(screen.getByText(/timeline academico-blockchain/i)).toBeInTheDocument();
+    expect(screen.getByText(/certificados por estado/i)).toBeInTheDocument();
+    expect(screen.getByText(/ultimas transacciones/i)).toBeInTheDocument();
+    expect(screen.getByText(/ultimos certificados emitidos/i)).toBeInTheDocument();
   });
 
   it("exposes the prompt 02 navigation and product shell controls", () => {

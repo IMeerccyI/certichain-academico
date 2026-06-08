@@ -1,171 +1,156 @@
-import { useMemo, useState } from "react";
-import type { ReactNode } from "react";
+import { cloneElement, useMemo, useRef } from "react";
+import { useGSAP } from "@gsap/react";
+import { gsap } from "gsap";
 import {
   Activity,
-  Blocks,
-  CircleDollarSign,
-  Clock3,
+  ArrowUpRight,
+  BadgeCheck,
+  Building2,
   Database,
-  Eye,
+  FileCheck2,
   FileSignature,
   Fingerprint,
+  Globe2,
   KeyRound,
-  MoreHorizontal,
+  Landmark,
   Network,
-  Route,
+  RotateCcw,
   ShieldAlert,
   ShieldCheck,
-  SlidersHorizontal,
   WalletCards,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Line,
+  LineChart,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip as ChartTooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
+import type { ReactElement, ReactNode } from "react";
+import type { RouteId } from "@/app/routes";
 import { HashChip } from "@/components/data-display/hash-chip";
 import { MetricCard } from "@/components/data-display/metric-card";
 import { MotionPage } from "@/components/motion";
-import { Modal } from "@/components/ui/modal";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { StatusBadge } from "@/components/ui/status-badge";
 import {
-  certificates,
+  blockchainEvents as blockchainEventFixtures,
   chainNodes,
-  issuers,
-  ledgerEvents,
-  students,
+  manipulatedDocumentCases,
+  monthlyActivity,
 } from "@/data/mock-data";
-import { formatDateTime, formatLatency, numberFormatter } from "@/lib/formatters";
-import { calculateSha256, normalizeHash, shortenHash } from "@/lib/hash";
-import { getMockChainHealth } from "@/lib/mock-chain";
+import { formatDateTime, numberFormatter } from "@/lib/formatters";
+import { shortenHash } from "@/lib/hash";
+import { motionPresets, shouldSkipMotion } from "@/lib/motion";
 import { cn } from "@/lib/cn";
+import { useReducedMotion } from "@/hooks/useReducedMotion";
 import { useAppStore } from "@/store/app-store";
+import type { Certificate, CertificateStatus, NetworkType, VerifierEntityType } from "@/types/domain";
 
-const guardrailRows = [
+const CONTRACT_ADDRESS = "0xAcaD3E71b8F6cD0fA59244cA2D7f8E9c12B0C4";
+
+const statusLabels: Record<CertificateStatus, string> = {
+  manipulated: "Manipulado",
+  not_found: "No encontrado",
+  pending_reception: "Pendiente recepcion",
+  revoked: "Revocado",
+  valid: "Valido",
+};
+
+const typeLabels: Record<Certificate["type"], string> = {
+  academic_diploma: "Diploma academico",
+  grade_certificate: "Certificado de notas",
+  graduation_certificate: "Certificado de egreso",
+  professional_title: "Titulo profesional",
+  study_record: "Constancia de estudios",
+};
+
+const verifierTypeLabels: Record<VerifierEntityType, string> = {
+  government: "Gobierno",
+  human_resources: "RR.HH.",
+  private_company: "Empresa",
+  professional_board: "Colegio",
+  scholarship_unit: "Becas",
+  university: "Universidad",
+};
+
+const networkLabels: Record<NetworkType, string> = {
+  ganache: "Ganache local",
+  hardhat: "Hardhat local",
+  sepolia: "Sepolia Testnet",
+};
+
+const chartColors = [
+  "hsl(var(--primary))",
+  "hsl(var(--success))",
+  "hsl(var(--warning))",
+  "hsl(var(--accent))",
+  "hsl(var(--destructive))",
+];
+
+const testChartSize = {
+  height: 220,
+  width: 320,
+};
+
+const flowSteps = [
   {
-    time: "10:42 AM",
-    client: "issuer_umsa",
-    rule: "SHA-256 mismatch",
-    snippet: "PDF hash changed after signature",
-    action: "Blocked",
-    tone: "danger",
+    title: "Generar PDF",
+    detail: "Secretaria academica prepara el documento oficial.",
+    icon: FileSignature,
   },
   {
-    time: "10:15 AM",
-    client: "wallet_27b9",
-    rule: "Unauthorized issuer",
-    snippet: "Faculty wallet requested title issue",
-    action: "Fallback",
-    tone: "warning",
+    title: "Calcular SHA-256",
+    detail: "El PDF se transforma en huella criptografica.",
+    icon: Fingerprint,
   },
   {
-    time: "09:30 AM",
-    client: "sys_router",
-    rule: "Revoked folio reused",
-    snippet: "CERT-2026-0003 detected in verifier",
-    action: "Blocked",
-    tone: "danger",
+    title: "Registrar hash en Ethereum",
+    detail: "El contrato inteligente ancla la evidencia.",
+    icon: Database,
   },
   {
-    time: "09:12 AM",
-    client: "student_101",
-    rule: "Reception pending",
-    snippet: "{ student_signature: null }",
-    action: "Retried",
-    tone: "primary",
+    title: "Firmar emision",
+    detail: "Wallet institucional autoriza la emision.",
+    icon: KeyRound,
+  },
+  {
+    title: "Firma de recepcion",
+    detail: "El estudiante confirma recepcion del certificado.",
+    icon: WalletCards,
+  },
+  {
+    title: "Replicacion blockchain",
+    detail: "Nodos academicos conservan trazabilidad.",
+    icon: Network,
+  },
+  {
+    title: "Verificacion por empresa",
+    detail: "Entidades externas validan sin llamar a la universidad.",
+    icon: ShieldCheck,
   },
 ];
 
-const architectureNodes = [
-  {
-    id: "api",
-    label: "API Gateway",
-    detail: "/v1/certificates/issue",
-    metric: "124k reqs",
-    position: "left-1/2 top-[18%] -translate-x-1/2",
-    tone: "neutral",
-  },
-  {
-    id: "issuer",
-    label: "Issuer ACL",
-    detail: "Authorized wallet",
-    metric: "68%",
-    position: "left-[12%] top-[42%]",
-    tone: "success",
-  },
-  {
-    id: "hash",
-    label: "SHA-256 Engine",
-    detail: "PDF digest",
-    metric: "145ms",
-    position: "right-[12%] top-[42%]",
-    tone: "success",
-  },
-  {
-    id: "chain",
-    label: "Smart Contract",
-    detail: "emitirCertificado()",
-    metric: "0.052 ETH",
-    position: "left-1/2 top-[68%] -translate-x-1/2",
-    tone: "warning",
-  },
-] as const;
+type StatusTone = "danger" | "neutral" | "primary" | "success" | "warning";
 
-const metrics = [
-  {
-    label: "Processed Certificates",
-    value: "124k",
-    detail: "Certificates increased by",
-    delta: "+15% vs yesterday",
-    tone: "primary" as const,
-    progress: 82,
-    bars: [44, 72, 59, 91, 66, 82],
-    icon: <Blocks className="h-4 w-4" aria-hidden="true" />,
-  },
-  {
-    label: "Avg. Finality",
-    value: "850 ms",
-    detail: "Latency increased by",
-    delta: "-45ms vs yesterday",
-    tone: "accent" as const,
-    progress: 71,
-    bars: [32, 51, 68, 74, 58, 46],
-    icon: <Clock3 className="h-4 w-4" aria-hidden="true" />,
-  },
-  {
-    label: "Total Gas Cost",
-    value: "$452.10",
-    detail: "Costs decreased by",
-    delta: "$120 vs yesterday",
-    tone: "success" as const,
-    progress: 62,
-    bars: [41, 76, 88, 54, 67, 48],
-    icon: <CircleDollarSign className="h-4 w-4" aria-hidden="true" />,
-  },
-  {
-    label: "Blocked Requests",
-    value: "2.4k",
-    detail: "Blocks increased by",
-    delta: "+4% vs yesterday",
-    tone: "danger" as const,
-    progress: 53,
-    bars: [72, 48, 62, 55, 76, 61],
-    icon: <ShieldAlert className="h-4 w-4" aria-hidden="true" />,
-  },
-];
-
-const toneBadgeClass = {
-  primary: "border-primary/20 bg-primary/10 text-primary shadow-[0_0_18px_hsl(var(--primary)/0.08)]",
-  success: "border-success/20 bg-success/10 text-success shadow-[0_0_18px_hsl(var(--success)/0.07)]",
-  warning: "border-warning/20 bg-warning/10 text-warning shadow-[0_0_18px_hsl(var(--warning)/0.07)]",
+const toneBadgeClass: Record<StatusTone, string> = {
   danger:
     "border-destructive/20 bg-destructive/10 text-destructive shadow-[0_0_18px_hsl(var(--destructive)/0.08)]",
   neutral: "border-border/80 bg-secondary text-muted-foreground",
+  primary: "border-primary/20 bg-primary/10 text-primary shadow-[0_0_18px_hsl(var(--primary)/0.08)]",
+  success: "border-success/20 bg-success/10 text-success shadow-[0_0_18px_hsl(var(--success)/0.07)]",
+  warning: "border-warning/20 bg-warning/10 text-warning shadow-[0_0_18px_hsl(var(--warning)/0.07)]",
 };
 
-function StatusPill({
-  children,
-  tone = "neutral",
-}: {
-  children: ReactNode;
-  tone?: keyof typeof toneBadgeClass;
-}) {
+function StatusPill({ children, tone = "neutral" }: { children: ReactNode; tone?: StatusTone }) {
   return (
     <span
       className={cn(
@@ -178,329 +163,665 @@ function StatusPill({
   );
 }
 
-function ArchitectureNode({
-  detail,
-  label,
-  metric,
-  position,
-  tone,
-}: (typeof architectureNodes)[number]) {
+function PulseDot({ tone = "success" }: { tone?: "primary" | "success" | "warning" }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const reducedMotion = useReducedMotion();
+
+  useGSAP(
+    () => {
+      if (!ref.current || shouldSkipMotion(reducedMotion)) {
+        return;
+      }
+
+      const tween = gsap.to(ref.current, motionPresets.blockchainPulse.to);
+
+      return () => tween.kill();
+    },
+    { dependencies: [reducedMotion], scope: ref },
+  );
+
   return (
-    <div
+    <span
       className={cn(
-        "absolute min-w-[10rem] rounded-lg border border-border/90 bg-card p-3 shadow-[inset_0_1px_0_hsl(var(--foreground)/0.035),0_20px_60px_-42px_hsl(var(--shadow-ledger)/1)]",
-        position,
+        "h-2 w-2 rounded-full shadow-[0_0_18px_currentColor]",
+        tone === "primary" && "bg-primary text-primary",
+        tone === "success" && "bg-success text-success",
+        tone === "warning" && "bg-warning text-warning",
       )}
-    >
-      <div className="flex items-center justify-between gap-2">
-        <p className="text-xs font-semibold text-foreground">{label}</p>
-        <StatusPill tone={tone === "neutral" ? "primary" : tone}>
-          {tone === "warning" ? "Warning" : tone === "success" ? "Healthy" : "Live"}
-        </StatusPill>
-      </div>
-      <div className="mt-3 grid grid-cols-[1fr_auto] gap-3 border-t border-border/80 pt-2 text-xs">
-        <span className="truncate text-muted-foreground">{detail}</span>
-        <span className="font-mono font-semibold text-foreground">{metric}</span>
-      </div>
-    </div>
+      ref={ref}
+    />
   );
 }
 
-function RulePanel({
-  detail,
+function ChartCard({
+  children,
+  description,
+  title,
+}: {
+  children: ReactNode;
+  description: string;
+  title: string;
+}) {
+  return (
+    <Card className="min-h-[19rem]">
+      <CardHeader>
+        <p className="text-sm font-semibold text-foreground">{title}</p>
+        <p className="mt-1 text-xs leading-5 text-muted-foreground">{description}</p>
+      </CardHeader>
+      <CardContent className="h-56">{children}</CardContent>
+    </Card>
+  );
+}
+
+function ResponsiveChart({
+  children,
+}: {
+  children: ReactElement<{ height?: number; width?: number }>;
+}) {
+  if (import.meta.env.MODE === "test") {
+    return (
+      <div className="h-56 w-full overflow-hidden">
+        {cloneElement(children, testChartSize)}
+      </div>
+    );
+  }
+
+  return (
+    <ResponsiveContainer height="100%" minHeight={220} minWidth={280} width="100%">
+      {children}
+    </ResponsiveContainer>
+  );
+}
+
+function OperationalStat({
+  icon,
   label,
   value,
 }: {
+  icon: ReactNode;
   label: string;
-  detail: string;
-  value: string;
+  value: ReactNode;
 }) {
   return (
     <div className="rounded-lg border border-border/55 bg-black/45 p-3 shadow-[inset_0_1px_0_hsl(var(--foreground)/0.035)]">
-      <p className="text-xs font-semibold text-foreground">{label}</p>
-      <div className="mt-3 flex items-center justify-between gap-3 text-xs">
-        <span className="text-muted-foreground">{detail}</span>
-        <span className="rounded-md bg-secondary px-2 py-1 font-mono text-foreground">{value}</span>
+      <div className="flex items-center gap-2 text-muted-foreground">
+        {icon}
+        <p className="text-xs">{label}</p>
       </div>
+      <div className="mt-2 min-w-0 font-mono text-sm font-semibold text-foreground">{value}</div>
     </div>
   );
 }
 
-export function DashboardPage() {
-  const [modalOpen, setModalOpen] = useState(false);
-  const [demoHash, setDemoHash] = useState(certificates[0].pdfHash);
-  const addToast = useAppStore((state) => state.addToast);
-  const chainHealth = getMockChainHealth();
+function statusTone(status: CertificateStatus): StatusTone {
+  if (status === "valid") {
+    return "success";
+  }
 
-  const activeStudents = useMemo(
-    () => new Set(certificates.map((certificate) => certificate.studentId)).size,
+  if (status === "revoked" || status === "manipulated") {
+    return "danger";
+  }
+
+  if (status === "pending_reception") {
+    return "warning";
+  }
+
+  return "neutral";
+}
+
+function countBy<T>(
+  items: T[],
+  getKey: (item: T) => string,
+) {
+  const counts = new Map<string, number>();
+
+  for (const item of items) {
+    const key = getKey(item);
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+
+  return Array.from(counts, ([name, value]) => ({ name, value }));
+}
+
+export function DashboardPage() {
+  const certificates = useAppStore((state) =>
+    Array.isArray(state.certificates) ? state.certificates : [],
+  );
+  const issuers = useAppStore((state) => (Array.isArray(state.issuers) ? state.issuers : []));
+  const verificationAttempts = useAppStore((state) =>
+    Array.isArray(state.verificationAttempts) ? state.verificationAttempts : [],
+  );
+  const verifierEntities = useAppStore((state) =>
+    Array.isArray(state.verifierEntities) ? state.verifierEntities : [],
+  );
+  const ledgerEvents = useAppStore((state) =>
+    Array.isArray(state.blockchainEvents) && state.blockchainEvents.length > 0
+      ? state.blockchainEvents
+      : blockchainEventFixtures,
+  );
+  const wallet = useAppStore((state) => state.wallet);
+  const selectedNetwork = useAppStore((state) => state.selectedNetwork);
+  const setRoute = useAppStore((state) => state.setRoute);
+  const addToast = useAppStore((state) => state.addToast);
+
+  const summary = useMemo(() => {
+    const valid = certificates.filter((certificate) => certificate.status === "valid").length;
+    const revoked = certificates.filter((certificate) => certificate.status === "revoked").length;
+    const pending = certificates.filter(
+      (certificate) => certificate.status === "pending_reception",
+    ).length;
+    const manipulated = certificates.filter(
+      (certificate) => certificate.status === "manipulated",
+    ).length;
+    const activeIssuers = issuers.filter((issuer) => issuer.active).length;
+    const syncedNodes = chainNodes.filter((node) => node.status === "synced").length;
+
+    return {
+      activeIssuers,
+      manipulated,
+      pending,
+      revoked,
+      syncedNodes,
+      valid,
+    };
+  }, [certificates, issuers]);
+
+  const statusDistribution = useMemo(
+    () =>
+      countBy(certificates, (certificate) => statusLabels[certificate.status]).map((item, index) => ({
+        ...item,
+        fill: chartColors[index % chartColors.length],
+      })),
+    [certificates],
+  );
+
+  const facultyDistribution = useMemo(
+    () =>
+      countBy(certificates, (certificate) => certificate.faculty).map((item, index) => ({
+        ...item,
+        fill: chartColors[index % chartColors.length],
+      })),
+    [certificates],
+  );
+
+  const verificationByEntity = useMemo(() => {
+    const verifierById = new Map(verifierEntities.map((entity) => [entity.id, entity]));
+
+    return countBy(verificationAttempts, (attempt) => {
+      const entity = verifierById.get(attempt.verifierEntityId);
+      return entity ? verifierTypeLabels[entity.type] : "Sin entidad";
+    }).map((item, index) => ({
+      ...item,
+      fill: chartColors[index % chartColors.length],
+    }));
+  }, [verificationAttempts, verifierEntities]);
+
+  const monthlyChartData = useMemo(
+    () =>
+      monthlyActivity.slice(-8).map((item) => ({
+        issued: item.issued,
+        month: item.label,
+        revoked: item.revoked,
+        verified: item.verified,
+      })),
     [],
   );
 
-  const latestCertificate = certificates[0];
-  const latestStudent = students.find((student) => student.id === latestCertificate.studentId);
-  const latestIssuer = issuers.find((issuer) => issuer.id === latestCertificate.issuerId);
+  const latestCertificates = useMemo(
+    () =>
+      [...certificates]
+        .sort((a, b) => new Date(b.issueDate).getTime() - new Date(a.issueDate).getTime())
+        .slice(0, 5),
+    [certificates],
+  );
 
-  const simulateIssue = async () => {
-    const hash = normalizeHash(
-      await calculateSha256(`certichain-${Date.now()}-${certificates.length}`),
-    );
-    setDemoHash(hash);
+  const latestEvents = ledgerEvents.slice(0, 5);
+  const latestBlock =
+    ledgerEvents.length > 0 ? Math.max(...ledgerEvents.map((event) => event.blockNumber)) : 0;
+  const totalCertificateCount = Math.max(certificates.length, 1);
+  const totalIssuerCount = Math.max(issuers.length, 1);
+
+  const navigate = (routeId: RouteId, label: string) => {
+    setRoute(routeId);
     addToast({
-      title: "Certificate flow simulated",
-      description: `Hash ${shortenHash(hash, 9)} is ready for mock anchoring.`,
-      intent: "success",
+      title: "Vista actualizada",
+      description: `El dashboard abrio ${label} con la transicion del sistema.`,
+      intent: "info",
     });
-    setModalOpen(false);
+  };
+
+  const metricBars = {
+    activeIssuers: [38, 48, 58, 72, 76, 80],
+    emitted: [42, 56, 61, 70, 86, 92],
+    revoked: [18, 30, 42, 35, 50, 44],
+    risk: [54, 66, 70, 62, 76, 82],
+    valid: [34, 50, 67, 79, 74, 88],
+    verified: [28, 44, 58, 65, 78, 84],
   };
 
   return (
-    <MotionPage className="grid min-w-0 gap-3">
+    <MotionPage className="grid min-w-0 gap-3" data-testid="dashboard-general">
       <section
-        className="min-w-0 flex flex-col gap-3 md:flex-row md:items-center md:justify-between"
+        className="grid min-w-0 gap-3 xl:grid-cols-[minmax(0,1.4fr)_minmax(22rem,0.72fr)]"
         data-reveal
       >
-        <div>
-          <div className="flex flex-wrap items-center gap-2">
-            <StatusPill tone="primary">Overview</StatusPill>
-            <StatusPill>Metrics</StatusPill>
-            <StatusPill>Evaluations</StatusPill>
-          </div>
-          <h1 className="mt-3 text-2xl font-semibold tracking-tight text-foreground">
-            Academic Certificate Pipeline
-          </h1>
-          <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
-            Live simulation for university certificate issuance, SHA-256 hashing,
-            Ethereum anchoring and public verification.
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Button
-            icon={<FileSignature className="h-4 w-4" aria-hidden="true" />}
-            onClick={() => setModalOpen(true)}
-            variant="secondary"
-          >
-            Issue flow
-          </Button>
-          <Button
-            icon={<Eye className="h-4 w-4" aria-hidden="true" />}
-            onClick={() =>
-              addToast({
-                title: "Verifier check",
-                description: "CERT-2026-0001 matches issuer, hash and ledger status.",
-                intent: "info",
-              })
-            }
-          >
-            Verify
-          </Button>
-        </div>
-      </section>
+        <Card className="overflow-hidden">
+          <CardContent className="grid gap-5 p-4 lg:grid-cols-[minmax(0,1fr)_18rem] lg:p-5">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <StatusPill tone="primary">Dashboard general</StatusPill>
+                <StatusPill tone="success">
+                  <span className="mr-1.5 inline-flex">
+                    <PulseDot />
+                  </span>
+                  Ethereum operativo
+                </StatusPill>
+                <StatusPill>{summary.syncedNodes}/4 nodos</StatusPill>
+              </div>
+              <h1 className="mt-4 text-3xl font-semibold leading-tight tracking-tight text-foreground">
+                CertiChain Academico
+              </h1>
+              <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
+                Panel operativo para demostrar emision universitaria, hash SHA-256, firma digital,
+                trazabilidad Ethereum y verificacion publica de certificados academicos bolivianos.
+              </p>
+              <div className="mt-5 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+                <Button
+                  aria-label="Acceso rapido: emitir certificado"
+                  icon={<FileSignature className="h-4 w-4" aria-hidden="true" />}
+                  onClick={() => navigate("issue", "Emitir Certificado")}
+                  variant="secondary"
+                >
+                  Emitir
+                </Button>
+                <Button
+                  aria-label="Acceso rapido: verificar certificado"
+                  icon={<ShieldCheck className="h-4 w-4" aria-hidden="true" />}
+                  onClick={() => navigate("verification", "Verificacion Publica")}
+                  variant="secondary"
+                >
+                  Verificar
+                </Button>
+                <Button
+                  aria-label="Acceso rapido: ledger blockchain"
+                  icon={<Database className="h-4 w-4" aria-hidden="true" />}
+                  onClick={() => navigate("ledger", "Ledger Blockchain")}
+                  variant="secondary"
+                >
+                  Ledger
+                </Button>
+                <Button
+                  aria-label="Acceso rapido: auditoria distribuida"
+                  icon={<ShieldAlert className="h-4 w-4" aria-hidden="true" />}
+                  onClick={() => navigate("audit", "Auditoria Distribuida")}
+                  variant="secondary"
+                >
+                  Auditoria
+                </Button>
+              </div>
+            </div>
 
-      <section className="grid min-w-0 gap-3 md:grid-cols-2 xl:grid-cols-4" data-reveal>
-        {metrics.map((metric) => (
-          <MetricCard key={metric.label} {...metric} />
-        ))}
-      </section>
+            <div className="grid gap-2">
+              <OperationalStat
+                icon={<WalletCards className="h-4 w-4" aria-hidden="true" />}
+                label="Wallet institucional"
+                value={
+                  <div className="grid gap-1">
+                    <span>{wallet.connected ? "Conectada" : "Lista para conectar"}</span>
+                    <span className="truncate text-xs text-muted-foreground">
+                      {shortenHash(wallet.address, 6)}
+                    </span>
+                  </div>
+                }
+              />
+              <OperationalStat
+                icon={<Globe2 className="h-4 w-4" aria-hidden="true" />}
+                label="Red Ethereum"
+                value={
+                  <span className="flex items-center gap-2">
+                    <PulseDot tone="primary" />
+                    {networkLabels[selectedNetwork]}
+                  </span>
+                }
+              />
+              <OperationalStat
+                icon={<Landmark className="h-4 w-4" aria-hidden="true" />}
+                label="Contrato academico"
+                value={<HashChip hash={CONTRACT_ADDRESS} size={8} />}
+              />
+            </div>
+          </CardContent>
+        </Card>
 
-      <section
-        className="grid min-w-0 gap-3 xl:grid-cols-[minmax(0,1.25fr)_minmax(26rem,0.9fr)]"
-        data-reveal
-      >
         <Card>
           <CardHeader className="flex flex-row items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <Network className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
-              <p className="text-sm font-medium text-foreground">Endpoint traffic & health</p>
+            <div>
+              <p className="text-sm font-semibold text-foreground">Riesgo documental evitado</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Casos detectados sin depender de llamadas o validacion presencial.
+              </p>
             </div>
-            <div className="flex items-center gap-2">
-              <Button
-                className="min-h-8 px-3 text-xs"
-                onClick={() =>
-                  addToast({
-                    title: "Endpoint detail",
-                    description: "Traffic, latency and node health are shown in the pipeline panel.",
-                    intent: "info",
-                  })
-                }
-                variant="secondary"
-              >
-                View Details
-              </Button>
-              <button
-                className="grid h-8 w-8 place-items-center rounded-md bg-secondary text-muted-foreground"
-                onClick={() =>
-                  addToast({
-                    title: "Endpoint menu",
-                    description: "Panel actions are simulated for this frontend demo.",
-                    intent: "info",
-                  })
-                }
-                type="button"
-              >
-                <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
-                <span className="sr-only">Endpoint menu</span>
-              </button>
+            <StatusPill tone="danger">{summary.manipulated} criticos</StatusPill>
+          </CardHeader>
+          <CardContent className="grid gap-3">
+            <div className="grid grid-cols-[auto_1fr_auto] items-center gap-3 rounded-lg border border-border/55 bg-black/45 p-3">
+              <ShieldAlert className="h-5 w-5 text-destructive" aria-hidden="true" />
+              <div>
+                <p className="text-sm font-semibold text-foreground">
+                  {summary.manipulated} documentos manipulados bloqueados
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  PDF alterado respecto al hash registrado.
+                </p>
+              </div>
+              <span className="font-mono text-lg text-foreground">{summary.manipulated}</span>
             </div>
+            <div className="grid grid-cols-[auto_1fr_auto] items-center gap-3 rounded-lg border border-border/55 bg-black/45 p-3">
+              <RotateCcw className="h-5 w-5 text-warning" aria-hidden="true" />
+              <div>
+                <p className="text-sm font-semibold text-foreground">
+                  {summary.revoked} certificados revocados trazables
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Correcciones administrativas sin borrar historial.
+                </p>
+              </div>
+              <span className="font-mono text-lg text-foreground">{summary.revoked}</span>
+            </div>
+          </CardContent>
+        </Card>
+      </section>
+
+      <section className="grid min-w-0 gap-3 md:grid-cols-2 xl:grid-cols-3" data-reveal>
+        <MetricCard
+          actionLabel="Metrica: ver certificados emitidos"
+          bars={metricBars.emitted}
+          delta={`${summary.pending} pendiente de recepcion`}
+          detail="Registros anclados en ledger"
+          icon={<FileCheck2 className="h-4 w-4" aria-hidden="true" />}
+          label="Certificados emitidos"
+          onClick={() => navigate("certificates", "Certificados")}
+          progress={92}
+          testId="metric-total-certificates"
+          tone="primary"
+          value={String(certificates.length)}
+        />
+        <MetricCard
+          actionLabel="Metrica: ver certificados validos"
+          bars={metricBars.valid}
+          delta="Disponibles para verificacion publica"
+          detail="Sin revocacion ni alerta de hash"
+          icon={<BadgeCheck className="h-4 w-4" aria-hidden="true" />}
+          label="Certificados validos"
+          onClick={() => navigate("certificates", "Certificados")}
+          progress={Math.round((summary.valid / totalCertificateCount) * 100)}
+          testId="metric-valid-certificates"
+          tone="success"
+          value={String(summary.valid)}
+        />
+        <MetricCard
+          actionLabel="Metrica: ver revocacion"
+          bars={metricBars.revoked}
+          delta="Historial preservado"
+          detail="Revocados por emisor autorizado"
+          icon={<RotateCcw className="h-4 w-4" aria-hidden="true" />}
+          label="Certificados revocados"
+          onClick={() => navigate("revocation", "Revocacion")}
+          progress={Math.round((summary.revoked / totalCertificateCount) * 100)}
+          testId="metric-revoked-certificates"
+          tone="warning"
+          value={String(summary.revoked)}
+        />
+        <MetricCard
+          actionLabel="Metrica: abrir verificacion publica"
+          bars={metricBars.verified}
+          delta="Empresas, universidades y gobierno"
+          detail="Consultas externas registradas"
+          icon={<Globe2 className="h-4 w-4" aria-hidden="true" />}
+          label="Verificaciones publicas"
+          onClick={() => navigate("verification", "Verificacion Publica")}
+          progress={84}
+          testId="metric-public-verifications"
+          tone="accent"
+          value={String(verificationAttempts.length)}
+        />
+        <MetricCard
+          actionLabel="Metrica: abrir emisores"
+          bars={metricBars.activeIssuers}
+          delta={`${issuers.length - summary.activeIssuers} desactivado para auditoria`}
+          detail="Wallets universitarias activas"
+          icon={<Building2 className="h-4 w-4" aria-hidden="true" />}
+          label="Emisores activos"
+          onClick={() => navigate("issuers", "Emisores")}
+          progress={Math.round((summary.activeIssuers / totalIssuerCount) * 100)}
+          testId="metric-active-issuers"
+          tone="primary"
+          value={String(summary.activeIssuers)}
+        />
+        <MetricCard
+          actionLabel="Metrica: abrir auditoria documental"
+          bars={metricBars.risk}
+          delta="Evidencia de falsificacion simulada"
+          detail="Alertas por hash no coincidente"
+          icon={<ShieldAlert className="h-4 w-4" aria-hidden="true" />}
+          label="Riesgo documental evitado"
+          onClick={() => navigate("audit", "Auditoria Distribuida")}
+          progress={76}
+          testId="metric-risk-avoided"
+          tone="danger"
+          value={String(manipulatedDocumentCases.length)}
+        />
+      </section>
+
+      <section className="grid min-w-0 gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(22rem,0.58fr)]" data-reveal>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-foreground">
+                Timeline academico-blockchain
+              </p>
+              <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                Flujo completo desde PDF universitario hasta verificacion independiente.
+              </p>
+            </div>
+            <StatusPill tone="success">7 pasos</StatusPill>
           </CardHeader>
           <CardContent>
-            <div className="relative min-h-[27rem] overflow-hidden rounded-lg border border-border/70 bg-black/60 p-4 shadow-[inset_0_1px_0_hsl(var(--foreground)/0.035),inset_0_-28px_60px_hsl(var(--shadow-ledger)/0.28)]">
-              <div className="absolute inset-0 opacity-65 [background-image:radial-gradient(hsl(var(--border))_1px,transparent_1px)] [background-size:12px_12px]" />
-              <div className="relative z-10 inline-flex rounded-md bg-secondary px-2 py-1 font-mono text-[11px] text-muted-foreground">
-                Last Updated : Jun 07 / 17:40
-              </div>
-              <div className="absolute left-1/2 top-[32%] h-px w-[44%] -translate-x-1/2 bg-border/80 shadow-[0_0_18px_hsl(var(--foreground)/0.12)]" />
-              <div className="absolute left-[25%] top-[32%] h-[34%] w-px bg-border/80 shadow-[0_0_18px_hsl(var(--foreground)/0.12)]" />
-              <div className="absolute right-[25%] top-[32%] h-[34%] w-px bg-border/80 shadow-[0_0_18px_hsl(var(--foreground)/0.12)]" />
-              <div className="absolute left-1/2 top-[34%] h-[34%] w-px -translate-x-1/2 bg-border/80 shadow-[0_0_18px_hsl(var(--foreground)/0.12)]" />
-              {architectureNodes.map((node) => (
-                <ArchitectureNode key={node.id} {...node} />
-              ))}
-            </div>
+            <ol className="grid gap-2 lg:grid-cols-7">
+              {flowSteps.map((step, index) => {
+                const Icon = step.icon;
+
+                return (
+                  <li
+                    className="relative rounded-lg border border-border/55 bg-black/45 p-3 shadow-[inset_0_1px_0_hsl(var(--foreground)/0.035)]"
+                    key={step.title}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="grid h-8 w-8 place-items-center rounded-md border border-border/80 bg-secondary text-primary">
+                        <Icon className="h-4 w-4" aria-hidden="true" />
+                      </span>
+                      <span className="font-mono text-[11px] text-muted-foreground">
+                        {String(index + 1).padStart(2, "0")}
+                      </span>
+                    </div>
+                    <p className="mt-3 text-xs font-semibold text-foreground">{step.title}</p>
+                    <p className="mt-2 text-[11px] leading-5 text-muted-foreground">
+                      {step.detail}
+                    </p>
+                  </li>
+                );
+              })}
+            </ol>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <Route className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
-              <p className="text-sm font-medium text-foreground">Active certificate architecture</p>
+            <div>
+              <p className="text-sm font-semibold text-foreground">Estado distribuido</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Replicacion disponible aunque una universidad este fuera de linea.
+              </p>
             </div>
-            <Button
-              className="min-h-8 px-3 text-xs"
-              onClick={() =>
-                addToast({
-                  title: "Pipeline editor",
-                  description: "Editing is simulated in this frontend mockup.",
-                  intent: "info",
-                })
-              }
-              variant="secondary"
-            >
-              Edit Pipeline
-            </Button>
+            <StatusPill tone="primary">Bloque {numberFormatter.format(latestBlock)}</StatusPill>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div>
-              <p className="font-mono text-xs uppercase text-muted-foreground">
-                1. Ingress (entry point)
-              </p>
-              <div className="mt-3 rounded-lg border border-border/55 bg-black/45 p-3 shadow-[inset_0_1px_0_hsl(var(--foreground)/0.035)]">
-                <div className="grid gap-3 text-xs">
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="text-muted-foreground">Endpoint:</span>
-                    <span className="font-mono text-foreground">/v1/certificates/issue</span>
-                    <StatusPill>POST</StatusPill>
-                  </div>
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="text-muted-foreground">Auth protocol:</span>
-                    <span className="font-mono text-foreground">Wallet signature</span>
-                  </div>
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="text-muted-foreground">Rate limit:</span>
-                    <span className="font-mono text-foreground">100 req/min per IP</span>
-                  </div>
+          <CardContent className="grid gap-2">
+            {chainNodes.map((node) => (
+              <div
+                className="grid grid-cols-[1fr_auto] items-center gap-3 rounded-lg border border-border/45 bg-black/35 px-3 py-2"
+                key={node.id}
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-xs font-semibold text-foreground">{node.label}</p>
+                  <p className="mt-1 text-[11px] text-muted-foreground">{node.location}</p>
                 </div>
+                <StatusBadge tone={node.status === "synced" ? "online" : "warning"}>
+                  {node.status === "synced" ? "sync" : "lag"}
+                </StatusBadge>
               </div>
-            </div>
-
-            <div>
-              <p className="font-mono text-xs uppercase text-muted-foreground">
-                2. Pre-processing middleware
-              </p>
-              <div className="mt-3 grid gap-2 md:grid-cols-3 xl:grid-cols-3">
-                <RulePanel detail="Engine" label="PDF hash" value="SHA-256" />
-                <RulePanel detail="Vector" label="Issuer ACL" value="Strict" />
-                <RulePanel detail="Action" label="Revocation class." value="Drop" />
-              </div>
-            </div>
-
-            <div>
-              <div className="mb-3 flex items-center justify-between gap-3">
-                <p className="font-mono text-xs uppercase text-muted-foreground">
-                  3. Dynamic router (decision matrix)
-                </p>
-                <StatusPill tone="danger">High</StatusPill>
-              </div>
-              <div className="rounded-lg border border-border/55 bg-black/45 p-3 shadow-[inset_0_1px_0_hsl(var(--foreground)/0.035)]">
-                <div className="flex flex-wrap items-center gap-2 rounded-md border border-border/45 bg-black/55 p-2 text-xs">
-                  <span className="text-muted-foreground">IF</span>
-                  <StatusPill>Document</StatusPill>
-                  <span className="text-muted-foreground">==</span>
-                  <StatusPill>Diploma</StatusPill>
-                  <StatusPill>Title</StatusPill>
-                </div>
-                <div className="mt-4 grid gap-3 text-xs">
-                  <div className="flex items-center justify-between">
-                    <span className="text-muted-foreground">Route to:</span>
-                    <span className="rounded-md bg-secondary px-2 py-1 font-mono text-foreground shadow-[inset_0_1px_0_hsl(var(--foreground)/0.035)]">
-                      emitirCertificado()
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-muted-foreground">Gas ceiling:</span>
-                    <span className="rounded-md bg-secondary px-2 py-1 font-mono text-foreground shadow-[inset_0_1px_0_hsl(var(--foreground)/0.035)]">
-                      0.08 ETH
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-muted-foreground">Block confirmations:</span>
-                    <span className="rounded-md bg-secondary px-2 py-1 font-mono text-foreground shadow-[inset_0_1px_0_hsl(var(--foreground)/0.035)]">
-                      12
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
+            ))}
           </CardContent>
         </Card>
       </section>
 
-      <section className="grid min-w-0 gap-3 xl:grid-cols-[minmax(0,1fr)_26rem]" data-reveal>
+      <section className="grid min-w-0 gap-3 2xl:grid-cols-4" data-reveal>
+        <ChartCard
+          description="Estados contractuales de los certificados academicos."
+          title="Certificados por estado"
+        >
+          <ResponsiveChart>
+            <PieChart>
+              <Pie data={statusDistribution} dataKey="value" innerRadius={48} outerRadius={76} paddingAngle={3}>
+                {statusDistribution.map((item) => (
+                  <Cell fill={item.fill} key={item.name} />
+                ))}
+              </Pie>
+              <ChartTooltip
+                contentStyle={{
+                  background: "hsl(var(--card))",
+                  border: "1px solid hsl(var(--border))",
+                  borderRadius: 8,
+                  color: "hsl(var(--foreground))",
+                }}
+              />
+            </PieChart>
+          </ResponsiveChart>
+        </ChartCard>
+
+        <ChartCard
+          description="Distribucion academica por facultad emisora."
+          title="Certificados por facultad"
+        >
+          <ResponsiveChart>
+            <BarChart data={facultyDistribution} layout="vertical" margin={{ left: 8, right: 8 }}>
+              <CartesianGrid horizontal={false} stroke="hsl(var(--border))" strokeDasharray="3 3" />
+              <XAxis axisLine={false} tickLine={false} type="number" />
+              <YAxis axisLine={false} dataKey="name" hide tickLine={false} type="category" />
+              <ChartTooltip
+                contentStyle={{
+                  background: "hsl(var(--card))",
+                  border: "1px solid hsl(var(--border))",
+                  borderRadius: 8,
+                }}
+              />
+              <Bar dataKey="value" radius={[0, 6, 6, 0]}>
+                {facultyDistribution.map((item) => (
+                  <Cell fill={item.fill} key={item.name} />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveChart>
+        </ChartCard>
+
+        <ChartCard
+          description="Emisiones y verificaciones durante la demo mensual."
+          title="Actividad mensual"
+        >
+          <ResponsiveChart>
+            <LineChart data={monthlyChartData} margin={{ left: 0, right: 8, top: 8 }}>
+              <CartesianGrid stroke="hsl(var(--border))" strokeDasharray="3 3" vertical={false} />
+              <XAxis axisLine={false} dataKey="month" tickLine={false} />
+              <YAxis axisLine={false} tickLine={false} width={28} />
+              <ChartTooltip
+                contentStyle={{
+                  background: "hsl(var(--card))",
+                  border: "1px solid hsl(var(--border))",
+                  borderRadius: 8,
+                }}
+              />
+              <Line dataKey="issued" dot={false} name="Emitidos" stroke="hsl(var(--primary))" strokeWidth={2} />
+              <Line dataKey="verified" dot={false} name="Verificados" stroke="hsl(var(--success))" strokeWidth={2} />
+              <Line dataKey="revoked" dot={false} name="Revocados" stroke="hsl(var(--warning))" strokeWidth={2} />
+            </LineChart>
+          </ResponsiveChart>
+        </ChartCard>
+
+        <ChartCard
+          description="Origen de las consultas publicas al verificador."
+          title="Verificaciones por entidad"
+        >
+          <ResponsiveChart>
+            <BarChart data={verificationByEntity} margin={{ left: 0, right: 8, top: 8 }}>
+              <CartesianGrid stroke="hsl(var(--border))" strokeDasharray="3 3" vertical={false} />
+              <XAxis axisLine={false} dataKey="name" tickLine={false} />
+              <YAxis axisLine={false} tickLine={false} width={24} />
+              <ChartTooltip
+                contentStyle={{
+                  background: "hsl(var(--card))",
+                  border: "1px solid hsl(var(--border))",
+                  borderRadius: 8,
+                }}
+              />
+              <Bar dataKey="value" radius={[6, 6, 0, 0]}>
+                {verificationByEntity.map((item) => (
+                  <Cell fill={item.fill} key={item.name} />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveChart>
+        </ChartCard>
+      </section>
+
+      <section className="grid min-w-0 gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(24rem,0.72fr)]" data-reveal>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between gap-3">
             <div className="flex items-center gap-2">
-              <ShieldCheck className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
-              <p className="text-sm font-medium text-foreground">Guardrail exceptions</p>
+              <Activity className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+              <p className="text-sm font-semibold text-foreground">Ultimas transacciones</p>
             </div>
             <Button
-              className="min-h-8 px-3 text-xs"
-              icon={<SlidersHorizontal className="h-3.5 w-3.5" />}
-              onClick={() =>
-                addToast({
-                  title: "Exception filter",
-                  description: "Showing high-risk certificate guardrails.",
-                  intent: "info",
-                })
-              }
+              icon={<ArrowUpRight className="h-4 w-4" aria-hidden="true" />}
+              onClick={() => navigate("ledger", "Ledger Blockchain")}
               variant="secondary"
             >
-              Filter
+              Ver ledger
             </Button>
           </CardHeader>
           <CardContent>
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[46rem] text-left text-xs">
+              <table className="w-full min-w-[44rem] text-left text-xs">
                 <thead className="bg-black/55 text-muted-foreground">
                   <tr>
-                    <th className="rounded-l-md px-3 py-2 font-medium">Time</th>
-                    <th className="px-3 py-2 font-medium">Client_ID</th>
-                    <th className="px-3 py-2 font-medium">Violation / Rule</th>
-                    <th className="px-3 py-2 font-medium">Certificate snippet</th>
-                    <th className="rounded-r-md px-3 py-2 text-right font-medium">Action</th>
+                    <th className="rounded-l-md px-3 py-2 font-medium">Bloque</th>
+                    <th className="px-3 py-2 font-medium">Evento</th>
+                    <th className="px-3 py-2 font-medium">Certificado</th>
+                    <th className="px-3 py-2 font-medium">Hash tx</th>
+                    <th className="rounded-r-md px-3 py-2 text-right font-medium">Fecha</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
-                  {guardrailRows.map((row) => (
-                    <tr className="text-foreground/85" key={`${row.time}-${row.rule}`}>
-                      <td className="px-3 py-3 font-mono text-muted-foreground">{row.time}</td>
-                      <td className="px-3 py-3 font-mono">{row.client}</td>
-                      <td className="px-3 py-3">{row.rule}</td>
-                      <td className="px-3 py-3 text-muted-foreground">{row.snippet}</td>
-                      <td className="px-3 py-3 text-right">
-                        <StatusPill tone={row.tone as keyof typeof toneBadgeClass}>
-                          {row.action}
-                        </StatusPill>
+                  {latestEvents.map((event) => (
+                    <tr className="text-foreground/85" key={event.id}>
+                      <td className="px-3 py-3 font-mono text-muted-foreground">
+                        {numberFormatter.format(event.blockNumber)}
+                      </td>
+                      <td className="px-3 py-3">{event.type}</td>
+                      <td className="px-3 py-3 font-mono text-muted-foreground">
+                        {event.certificateId ?? "emisor"}
+                      </td>
+                      <td className="px-3 py-3 font-mono">{shortenHash(event.transactionHash, 7)}</td>
+                      <td className="px-3 py-3 text-right text-muted-foreground">
+                        {formatDateTime(event.createdAt)}
                       </td>
                     </tr>
                   ))}
@@ -513,108 +834,41 @@ export function DashboardPage() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between gap-3">
             <div className="flex items-center gap-2">
-              <Database className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
-              <p className="text-sm font-medium text-foreground">Ledger monitor</p>
+              <FileCheck2 className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+              <p className="text-sm font-semibold text-foreground">Ultimos certificados emitidos</p>
             </div>
-            <StatusPill tone="success">{chainHealth.consensusLabel} synced</StatusPill>
+            <Button
+              icon={<ArrowUpRight className="h-4 w-4" aria-hidden="true" />}
+              onClick={() => navigate("certificates", "Certificados")}
+              variant="secondary"
+            >
+              Ver todos
+            </Button>
           </CardHeader>
-          <CardContent className="grid gap-3">
-            <div className="rounded-lg border border-border/55 bg-black/45 p-3 shadow-[inset_0_1px_0_hsl(var(--foreground)/0.035)]">
-              <p className="text-xs text-muted-foreground">Latest certificate</p>
-              <p className="mt-2 text-sm font-medium text-foreground">{latestCertificate.id}</p>
-              <p className="mt-1 text-xs text-muted-foreground">{latestStudent?.fullName}</p>
-              <div className="mt-3">
-                <HashChip hash={demoHash} size={9} />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <div className="rounded-lg border border-border/55 bg-black/45 p-3 shadow-[inset_0_1px_0_hsl(var(--foreground)/0.035)]">
-                <p className="text-xs text-muted-foreground">Issuer</p>
-                <p className="mt-2 text-sm font-medium text-foreground">{latestIssuer?.city}</p>
-              </div>
-              <div className="rounded-lg border border-border/55 bg-black/45 p-3 shadow-[inset_0_1px_0_hsl(var(--foreground)/0.035)]">
-                <p className="text-xs text-muted-foreground">Students</p>
-                <p className="mt-2 font-mono text-sm font-medium text-foreground">
-                  {activeStudents}
-                </p>
-              </div>
-            </div>
-            <div className="grid gap-2">
-              {chainNodes.map((node) => (
-                <div
-                  className="grid grid-cols-[1fr_auto] items-center gap-2 rounded-lg border border-border/35 bg-black/35 px-3 py-2 shadow-[inset_0_1px_0_hsl(var(--foreground)/0.025)]"
-                  key={node.id}
-                >
-                  <div>
-                    <p className="text-xs font-medium text-foreground">{node.label}</p>
-                    <p className="mt-1 text-[11px] text-muted-foreground">{node.location}</p>
-                  </div>
-                  <span className="font-mono text-[11px] text-muted-foreground">
-                    {formatLatency(node.latencyMs)}
+          <CardContent className="grid gap-2">
+            {latestCertificates.map((certificate) => (
+              <button
+                className="grid w-full grid-cols-[1fr_auto] items-start gap-3 rounded-lg border border-border/55 bg-black/40 p-3 text-left transition-colors hover:border-foreground/25 hover:bg-black/55 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/25"
+                key={certificate.id}
+                onClick={() => navigate("certificates", certificate.code)}
+                type="button"
+              >
+                <span className="min-w-0">
+                  <span className="block font-mono text-xs font-semibold text-foreground">
+                    {certificate.code}
                   </span>
-                </div>
-              ))}
-            </div>
+                  <span className="mt-1 block truncate text-xs text-muted-foreground">
+                    {certificate.studentName} | {typeLabels[certificate.type]}
+                  </span>
+                </span>
+                <StatusPill tone={statusTone(certificate.status)}>
+                  {statusLabels[certificate.status]}
+                </StatusPill>
+              </button>
+            ))}
           </CardContent>
         </Card>
       </section>
-
-      <section className="grid min-w-0 gap-3 xl:grid-cols-4" data-reveal>
-        {ledgerEvents.map((event) => (
-          <article
-            className="min-w-0 rounded-lg border border-border bg-card p-3 shadow-[inset_0_1px_0_hsl(var(--foreground)/0.035),0_20px_54px_-44px_hsl(var(--shadow-ledger)/1)]"
-            key={event.id}
-          >
-            <div className="flex items-start justify-between gap-3">
-              <Activity className="mt-0.5 h-4 w-4 text-primary" aria-hidden="true" />
-              <span className="font-mono text-[11px] text-muted-foreground">
-                {numberFormatter.format(event.blockNumber)}
-              </span>
-            </div>
-            <p className="mt-3 text-sm font-medium text-foreground">{event.detail}</p>
-            <p className="mt-2 text-xs text-muted-foreground">{formatDateTime(event.createdAt)}</p>
-          </article>
-        ))}
-      </section>
-
-      <Modal
-        description="The frontend calculates a local SHA-256 and simulates the contract transaction."
-        onOpenChange={setModalOpen}
-        open={modalOpen}
-        title="New certificate flow"
-      >
-        <div className="grid gap-4">
-          <div className="rounded-lg border border-border/55 bg-black/45 p-4 shadow-[inset_0_1px_0_hsl(var(--foreground)/0.035)]">
-            <div className="flex items-center gap-2">
-              <Fingerprint className="h-4 w-4 text-primary" aria-hidden="true" />
-              <p className="text-sm font-semibold text-foreground">
-                Certificate of grades - Distributed Systems
-              </p>
-            </div>
-            <div className="mt-4 grid gap-2 text-sm text-muted-foreground">
-              <div className="flex items-center gap-2">
-                <WalletCards className="h-4 w-4" aria-hidden="true" />
-                Student wallet bound to Carla Mendoza Quiroga
-              </div>
-              <div className="flex items-center gap-2">
-                <KeyRound className="h-4 w-4" aria-hidden="true" />
-                UMSA issuer signature required
-              </div>
-            </div>
-          </div>
-          <div className="flex justify-end gap-3">
-            <Button onClick={() => setModalOpen(false)} variant="ghost">
-              Cancel
-            </Button>
-            <Button
-              icon={<FileSignature className="h-4 w-4" aria-hidden="true" />}
-              onClick={simulateIssue}
-            >
-              Calculate hash
-            </Button>
-          </div>
-        </div>
-      </Modal>
     </MotionPage>
   );
 }

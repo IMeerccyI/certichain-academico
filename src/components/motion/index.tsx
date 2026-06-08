@@ -12,7 +12,7 @@ import {
 } from "@/lib/motion";
 import { cn } from "@/lib/cn";
 
-type MotionElement = "article" | "div" | "li" | "main" | "section";
+type MotionElement = "article" | "button" | "div" | "li" | "main" | "section";
 
 type MotionPageProps = HTMLAttributes<HTMLDivElement> & {
   staggerSelector?: string;
@@ -20,6 +20,7 @@ type MotionPageProps = HTMLAttributes<HTMLDivElement> & {
 
 type MotionCardProps = HTMLAttributes<HTMLElement> & {
   as?: MotionElement;
+  type?: "button" | "reset" | "submit";
 };
 
 type RouteTransitionBoundaryProps = HTMLAttributes<HTMLElement> & {

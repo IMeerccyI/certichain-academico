@@ -4,11 +4,14 @@ import { AnimatedNumber, MotionCard } from "@/components/motion";
 import { cn } from "@/lib/cn";
 
 type MetricCardProps = {
+  actionLabel?: string;
   label: string;
   value: string;
   detail: string;
   icon: ReactNode;
+  onClick?: () => void;
   progress?: number;
+  testId?: string;
   tone?: "primary" | "accent" | "success" | "warning" | "danger";
   delta?: string;
   bars?: number[];
@@ -31,19 +34,30 @@ const barClasses = {
 };
 
 export function MetricCard({
+  actionLabel,
   bars = [34, 62, 48, 76, 58, 84],
   delta,
   detail,
   icon,
   label,
+  onClick,
   progress,
+  testId,
   tone = "primary",
   value,
 }: MetricCardProps) {
   return (
     <MotionCard
-      as="article"
-      className="min-h-[8.5rem] min-w-0 rounded-lg border border-border bg-card p-3.5 shadow-[inset_0_1px_0_hsl(var(--foreground)/0.04),0_24px_64px_-48px_hsl(var(--shadow-ledger)/1)]"
+      aria-label={onClick ? (actionLabel ?? label) : undefined}
+      as={onClick ? "button" : "article"}
+      className={cn(
+        "min-h-[8.5rem] min-w-0 rounded-lg border border-border bg-card p-3.5 shadow-[inset_0_1px_0_hsl(var(--foreground)/0.04),0_24px_64px_-48px_hsl(var(--shadow-ledger)/1)]",
+        onClick &&
+          "w-full text-left transition-colors hover:border-foreground/30 hover:bg-card focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/25",
+      )}
+      data-testid={testId}
+      onClick={onClick}
+      type={onClick ? "button" : undefined}
     >
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2">
