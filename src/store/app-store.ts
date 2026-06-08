@@ -316,8 +316,11 @@ export const useAppStore = create<AppStore>((set, get) => ({
     }
 
     const nextIndex = state.certificates.length + 1;
-    const code = `CERT-2026-${String(nextIndex).padStart(4, "0")}`;
-    const createdAt = new Date().toISOString();
+    const code = input.code?.trim() || `CERT-2026-${String(nextIndex).padStart(4, "0")}`;
+    const parsedIssueDate = input.issueDate ? new Date(input.issueDate) : new Date();
+    const createdAt = Number.isNaN(parsedIssueDate.getTime())
+      ? new Date().toISOString()
+      : parsedIssueDate.toISOString();
     const documentHash = normalizeHash(
       await calculateSha256(`${input.pdfName}-${student.identityDocument}-${createdAt}`),
     );
@@ -367,7 +370,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
         selectedCertificateId: certificate.id,
         toasts: [
           ...current.toasts,
-          createToast("Certificado emitido", `${code} fue anclado en la cadena mock.`, "success"),
+          createToast("Emision registrada", `${code} fue anclado en la cadena mock.`, "success"),
         ],
       };
       persistState(next);

@@ -231,8 +231,10 @@ export type AppToast = {
 export type CertificateIssueInput = {
   career: string;
   certificateType: CertificateType;
+  code?: string;
   faculty: string;
   identityDocument: string;
+  issueDate?: string;
   issuerId: string;
   observations: string;
   pdfName: string;

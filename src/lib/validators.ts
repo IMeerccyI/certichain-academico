@@ -21,6 +21,10 @@ export const hashSchema = z
 export const certificateIssueSchema = z.object({
   studentId: z.string().min(1),
   issuerId: z.string().min(1),
+  code: z
+    .string()
+    .regex(/^CERT-\d{4}-\d{4}$/, "El codigo debe usar formato CERT-2026-0001.")
+    .optional(),
   certificateType: z.enum([
     "grade_certificate",
     "academic_diploma",
@@ -31,6 +35,7 @@ export const certificateIssueSchema = z.object({
   career: z.string().min(3),
   faculty: z.string().min(3),
   identityDocument: z.string().min(4),
+  issueDate: z.string().min(10).optional(),
   observations: z.string().min(3),
   pdfName: z.string().min(4),
   university: z.string().min(3),
