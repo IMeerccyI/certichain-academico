@@ -5,7 +5,7 @@ import App from "@/app/App";
 import { calculateSha256, normalizeHash } from "@/lib/hash";
 import { useAppStore } from "@/store/app-store";
 
-describe("Prompt 08 public verification flow", () => {
+describe("Public verification module", () => {
   beforeEach(() => {
     window.localStorage.clear();
     useAppStore.getState().resetDemoData();

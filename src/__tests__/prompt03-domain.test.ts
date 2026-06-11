@@ -13,7 +13,7 @@ import {
 } from "@/data/fixture-data";
 import { useAppStore } from "@/store/app-store";
 
-describe("Prompt 03 domain data and store", () => {
+describe("Domain model and state store", () => {
   beforeEach(() => {
     window.localStorage.clear();
     useAppStore.getState().resetDemoData();

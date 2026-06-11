@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import App from "@/app/App";
 import { useAppStore } from "@/store/app-store";
 
-describe("Prompt 11 actor management", () => {
+describe("Academic actors module", () => {
   beforeEach(() => {
     window.localStorage.clear();
     useAppStore.getState().resetDemoData();

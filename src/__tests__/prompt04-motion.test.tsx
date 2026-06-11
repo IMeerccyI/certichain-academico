@@ -35,7 +35,7 @@ function StaggerProbe() {
   );
 }
 
-describe("Prompt 04 reusable GSAP motion system", () => {
+describe("GSAP motion system", () => {
   beforeEach(() => {
     window.localStorage.clear();
     useAppStore.getState().resetDemoData();

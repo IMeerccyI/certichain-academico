@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import App from "@/app/App";
 import { useAppStore } from "@/store/app-store";
 
-describe("Prompt 15 configuracion, importacion/exportacion y permisos", () => {
+describe("Settings module", () => {
   beforeEach(() => {
     window.localStorage.clear();
     useAppStore.getState().resetDemoData();

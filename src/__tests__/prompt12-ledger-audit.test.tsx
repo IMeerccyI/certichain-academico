@@ -6,7 +6,7 @@ import App from "@/app/App";
 import { AuditPage } from "@/features/audit/AuditPage";
 import { useAppStore } from "@/store/app-store";
 
-describe("Prompt 12 ledger and distributed audit", () => {
+describe("Ledger and audit module", () => {
   beforeEach(() => {
     window.localStorage.clear();
     useAppStore.getState().resetDemoData();

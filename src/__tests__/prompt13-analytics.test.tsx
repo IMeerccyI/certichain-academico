@@ -5,7 +5,7 @@ import { AppProviders } from "@/app/providers";
 import { AnalyticsPage } from "@/features/analytics/AnalyticsPage";
 import { useAppStore } from "@/store/app-store";
 
-describe("Prompt 13 system analytics", () => {
+describe("Analytics module", () => {
   beforeEach(() => {
     window.localStorage.clear();
     useAppStore.getState().resetDemoData();

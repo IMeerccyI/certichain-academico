@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import App from "@/app/App";
 import { useAppStore } from "@/store/app-store";
 
-describe("Prompt 09 certificates list and detail", () => {
+describe("Certificates module", () => {
   beforeEach(() => {
     window.localStorage.clear();
     useAppStore.getState().resetDemoData();

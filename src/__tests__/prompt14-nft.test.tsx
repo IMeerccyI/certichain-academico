@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import App from "@/app/App";
 import { useAppStore } from "@/store/app-store";
 
-describe("Prompt 14 NFT academico ERC-721", () => {
+describe("Academic NFT module", () => {
   beforeEach(() => {
     window.localStorage.clear();
     Object.defineProperty(window.navigator, "clipboard", {

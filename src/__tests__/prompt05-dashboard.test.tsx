@@ -11,7 +11,7 @@ import {
 } from "@/data/fixture-data";
 import { useAppStore } from "@/store/app-store";
 
-describe("Prompt 05 functional dashboard", () => {
+describe("Dashboard module", () => {
   beforeEach(() => {
     window.localStorage.clear();
     useAppStore.getState().resetDemoData();

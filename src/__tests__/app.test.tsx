@@ -20,7 +20,7 @@ describe("CertiChain application shell", () => {
     expect(screen.getByText(/ultimos certificados emitidos/i)).toBeInTheDocument();
   });
 
-  it("exposes the prompt 02 navigation and product shell controls", () => {
+  it("exposes navigation and product shell controls", () => {
     useAppStore.getState().setActiveRole("academic_admin");
     render(<App />);
 

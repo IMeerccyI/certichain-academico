@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import App from "@/app/App";
 import { useAppStore } from "@/store/app-store";
 
-describe("Prompt 06 real Web3 connection", () => {
+describe("Web3 connection module", () => {
   beforeEach(() => {
     Reflect.deleteProperty(window, "ethereum");
     window.localStorage.clear();

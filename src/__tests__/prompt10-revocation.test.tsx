@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import App from "@/app/App";
 import { useAppStore } from "@/store/app-store";
 
-describe("Prompt 10 revocation flow", () => {
+describe("Revocation module", () => {
   beforeEach(() => {
     Reflect.deleteProperty(window, "ethereum");
     window.localStorage.clear();
