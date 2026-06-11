@@ -8,6 +8,7 @@ describe("Prompt 09 certificates list and detail", () => {
   beforeEach(() => {
     window.localStorage.clear();
     useAppStore.getState().resetDemoData();
+    useAppStore.getState().setActiveRole("academic_admin");
     useAppStore.getState().setRoute("certificates");
 
     Object.defineProperty(window.navigator, "clipboard", {
@@ -101,13 +102,16 @@ describe("Prompt 09 certificates list and detail", () => {
     expect(within(detail).getAllByText(certificate.issuerName).length).toBeGreaterThan(0);
     expect(within(detail).getByText(certificate.documentHash)).toBeInTheDocument();
     expect(within(detail).getByText(certificate.blockchainHash)).toBeInTheDocument();
+    expect(within(detail).getByText(/identificador de registro/i)).toBeInTheDocument();
     expect(within(detail).getByText(certificate.issuerSignature)).toBeInTheDocument();
     expect(within(detail).getByText(certificate.receptionSignature ?? /sin firma/i)).toBeInTheDocument();
     expect(within(detail).getByText(/vista tipo documento/i)).toBeInTheDocument();
-    expect(within(detail).getByText(/qr simulado/i)).toBeInTheDocument();
-    expect(within(detail).getByText(/panel tecnico de smart contract/i)).toBeInTheDocument();
-    expect(within(detail).getByText(/emitirCertificado/i)).toBeInTheDocument();
-    expect(within(detail).getByText(/gas simulado/i)).toBeInTheDocument();
+    expect(within(detail).getByText(/qr generado localmente/i)).toBeInTheDocument();
+    expect(within(detail).getByText(/panel tecnico del certificado/i)).toBeInTheDocument();
+    expect(within(detail).getByText(/historial del certificado/i)).toBeInTheDocument();
+    expect(within(detail).getByRole("button", { name: /consultar on-chain/i })).toBeInTheDocument();
+    expect(within(detail).getByText(/generar evidencia documental/i)).toBeInTheDocument();
+    expect(within(detail).getByText(/previsualizacion generada localmente/i)).toBeInTheDocument();
 
     await user.click(within(row).getByRole("button", { name: /copiar hash/i }));
     expect(useAppStore.getState().toasts.some((toast) => /hash copiado/i.test(toast.title))).toBe(true);
@@ -117,10 +121,17 @@ describe("Prompt 09 certificates list and detail", () => {
       useAppStore.getState().toasts.some((toast) => /enlace publico copiado/i.test(toast.title)),
     ).toBe(true);
 
-    await user.click(within(row).getByRole("button", { name: /simular descarga pdf/i }));
-    await user.click(within(row).getByRole("button", { name: /simular qr/i }));
+    await user.click(within(row).getByRole("button", { name: /preparar pdf local/i }));
+    await user.click(within(row).getByRole("button", { name: /generar qr local/i }));
     expect(useAppStore.getState().toasts.some((toast) => /pdf preparado/i.test(toast.title))).toBe(true);
-    expect(useAppStore.getState().toasts.some((toast) => /qr simulado/i.test(toast.title))).toBe(true);
+    expect(
+      useAppStore
+        .getState()
+        .toasts.some((toast) => /generada localmente/i.test(toast.description ?? "")),
+    ).toBe(true);
+    expect(
+      useAppStore.getState().toasts.some((toast) => /qr generado localmente/i.test(toast.title)),
+    ).toBe(true);
 
     await user.click(within(detail).getByRole("button", { name: /revocar/i }));
     expect(useAppStore.getState().currentRouteId).toBe("revocation");

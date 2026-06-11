@@ -28,7 +28,7 @@ export function Timeline({ items }: TimelineProps) {
           key={item.id}
         >
           <span className="mt-1 h-2 w-2 rounded-full bg-primary shadow-[0_0_16px_hsl(var(--primary)/0.28)]" />
-          <div className="rounded-md border border-border/55 bg-black/35 p-3 shadow-[inset_0_1px_0_hsl(var(--foreground)/0.025)]">
+          <div className="rounded-md border border-border/55 bg-muted/45 p-3 shadow-[inset_0_1px_0_hsl(var(--foreground)/0.025)]">
             <div className="flex items-center justify-between gap-3">
               <p className="text-xs font-semibold text-foreground">{item.title}</p>
               {item.meta ? (

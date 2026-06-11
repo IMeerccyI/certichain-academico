@@ -11,21 +11,17 @@ import {
   FileSignature,
   Fingerprint,
   Globe2,
-  KeyRound,
-  Landmark,
-  Network,
+  PlugZap,
   RotateCcw,
-  ShieldAlert,
   ShieldCheck,
+  TrendingUp,
   WalletCards,
 } from "lucide-react";
 import {
-  Bar,
-  BarChart,
+  Area,
+  AreaChart,
   CartesianGrid,
   Cell,
-  Line,
-  LineChart,
   Pie,
   PieChart,
   ResponsiveContainer,
@@ -43,19 +39,18 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { StatusBadge } from "@/components/ui/status-badge";
 import {
   blockchainEvents as blockchainEventFixtures,
-  chainNodes,
   manipulatedDocumentCases,
   monthlyActivity,
-} from "@/data/mock-data";
+} from "@/data/fixture-data";
 import { formatDateTime, numberFormatter } from "@/lib/formatters";
 import { shortenHash } from "@/lib/hash";
 import { motionPresets, shouldSkipMotion } from "@/lib/motion";
 import { cn } from "@/lib/cn";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
+import { getDeploymentByNetwork, isDeploymentReady } from "@/lib/web3/deployments";
+import { canNavigateToRoute } from "@/lib/ui-permissions";
 import { useAppStore } from "@/store/app-store";
-import type { Certificate, CertificateStatus, NetworkType, VerifierEntityType } from "@/types/domain";
-
-const CONTRACT_ADDRESS = "0xAcaD3E71b8F6cD0fA59244cA2D7f8E9c12B0C4";
+import type { Certificate, CertificateStatus, NetworkType } from "@/types/domain";
 
 const statusLabels: Record<CertificateStatus, string> = {
   manipulated: "Manipulado",
@@ -73,22 +68,13 @@ const typeLabels: Record<Certificate["type"], string> = {
   study_record: "Constancia de estudios",
 };
 
-const verifierTypeLabels: Record<VerifierEntityType, string> = {
-  government: "Gobierno",
-  human_resources: "RR.HH.",
-  private_company: "Empresa",
-  professional_board: "Colegio",
-  scholarship_unit: "Becas",
-  university: "Universidad",
-};
-
 const networkLabels: Record<NetworkType, string> = {
   ganache: "Ganache local",
   hardhat: "Hardhat local",
   sepolia: "Sepolia Testnet",
 };
 
-const chartColors = [
+const chartPalette = [
   "hsl(var(--primary))",
   "hsl(var(--success))",
   "hsl(var(--warning))",
@@ -96,65 +82,39 @@ const chartColors = [
   "hsl(var(--destructive))",
 ];
 
-const testChartSize = {
-  height: 220,
-  width: 320,
-};
+const testChartSize = { height: 160, width: 320 };
 
 const flowSteps = [
-  {
-    title: "Generar PDF",
-    detail: "Secretaria academica prepara el documento oficial.",
-    icon: FileSignature,
-  },
-  {
-    title: "Calcular SHA-256",
-    detail: "El PDF se transforma en huella criptografica.",
-    icon: Fingerprint,
-  },
-  {
-    title: "Registrar hash en Ethereum",
-    detail: "El contrato inteligente ancla la evidencia.",
-    icon: Database,
-  },
-  {
-    title: "Firmar emision",
-    detail: "Wallet institucional autoriza la emision.",
-    icon: KeyRound,
-  },
-  {
-    title: "Firma de recepcion",
-    detail: "El estudiante confirma recepcion del certificado.",
-    icon: WalletCards,
-  },
-  {
-    title: "Replicacion blockchain",
-    detail: "Nodos academicos conservan trazabilidad.",
-    icon: Network,
-  },
-  {
-    title: "Verificacion por empresa",
-    detail: "Entidades externas validan sin llamar a la universidad.",
-    icon: ShieldCheck,
-  },
+  { title: "PDF + SHA-256", detail: "Documento y huella.", icon: FileSignature },
+  { title: "Anclaje Ethereum", detail: "Hash en contrato.", icon: Database },
+  { title: "Firma recepcion", detail: "Estudiante acepta.", icon: WalletCards },
+  { title: "Verificacion", detail: "Consulta publica.", icon: ShieldCheck },
 ];
 
 type StatusTone = "danger" | "neutral" | "primary" | "success" | "warning";
 
 const toneBadgeClass: Record<StatusTone, string> = {
-  danger:
-    "border-destructive/20 bg-destructive/10 text-destructive shadow-[0_0_18px_hsl(var(--destructive)/0.08)]",
-  neutral: "border-border/80 bg-secondary text-muted-foreground",
-  primary: "border-primary/20 bg-primary/10 text-primary shadow-[0_0_18px_hsl(var(--primary)/0.08)]",
-  success: "border-success/20 bg-success/10 text-success shadow-[0_0_18px_hsl(var(--success)/0.07)]",
-  warning: "border-warning/20 bg-warning/10 text-warning shadow-[0_0_18px_hsl(var(--warning)/0.07)]",
+  danger: "border-destructive/25 bg-destructive/10 text-destructive",
+  neutral: "border-border/70 bg-secondary/80 text-muted-foreground",
+  primary: "border-primary/25 bg-primary/10 text-primary",
+  success: "border-success/25 bg-success/10 text-success",
+  warning: "border-warning/25 bg-warning/10 text-warning",
+};
+
+const metricBars = {
+  activeIssuers: [38, 48, 58, 72, 76, 80],
+  emitted: [42, 56, 61, 70, 86, 92],
+  revoked: [18, 30, 42, 35, 50, 44],
+  risk: [54, 66, 70, 62, 76, 82],
+  valid: [34, 50, 67, 79, 74, 88],
+  verified: [28, 44, 58, 65, 78, 84],
 };
 
 function StatusPill({ children, tone = "neutral" }: { children: ReactNode; tone?: StatusTone }) {
   return (
     <span
       className={cn(
-        "inline-flex items-center rounded-md border px-2 py-1 text-[11px] font-semibold",
+        "inline-flex items-center rounded-full border px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em]",
         toneBadgeClass[tone],
       )}
     >
@@ -169,12 +129,8 @@ function PulseDot({ tone = "success" }: { tone?: "primary" | "success" | "warnin
 
   useGSAP(
     () => {
-      if (!ref.current || shouldSkipMotion(reducedMotion)) {
-        return;
-      }
-
+      if (!ref.current || shouldSkipMotion(reducedMotion)) return;
       const tween = gsap.to(ref.current, motionPresets.blockchainPulse.to);
-
       return () => tween.kill();
     },
     { dependencies: [reducedMotion], scope: ref },
@@ -183,103 +139,79 @@ function PulseDot({ tone = "success" }: { tone?: "primary" | "success" | "warnin
   return (
     <span
       className={cn(
-        "h-2 w-2 rounded-full shadow-[0_0_18px_currentColor]",
-        tone === "primary" && "bg-primary text-primary",
-        tone === "success" && "bg-success text-success",
-        tone === "warning" && "bg-warning text-warning",
+        "h-1.5 w-1.5 rounded-full",
+        tone === "primary" && "bg-primary shadow-[0_0_10px_hsl(var(--primary))]",
+        tone === "success" && "bg-success shadow-[0_0_10px_hsl(var(--success))]",
+        tone === "warning" && "bg-warning shadow-[0_0_10px_hsl(var(--warning))]",
       )}
       ref={ref}
     />
   );
 }
 
-function ChartCard({
-  children,
-  description,
-  title,
-}: {
-  children: ReactNode;
-  description: string;
-  title: string;
-}) {
-  return (
-    <Card className="min-h-[19rem]">
-      <CardHeader>
-        <p className="text-sm font-semibold text-foreground">{title}</p>
-        <p className="mt-1 text-xs leading-5 text-muted-foreground">{description}</p>
-      </CardHeader>
-      <CardContent className="h-56">{children}</CardContent>
-    </Card>
-  );
-}
-
-function ResponsiveChart({
-  children,
-}: {
-  children: ReactElement<{ height?: number; width?: number }>;
-}) {
+function ResponsiveChart({ children }: { children: ReactElement<{ height?: number; width?: number }> }) {
   if (import.meta.env.MODE === "test") {
     return (
-      <div className="h-56 w-full overflow-hidden">
+      <div className="h-36 w-full overflow-hidden">
         {cloneElement(children, testChartSize)}
       </div>
     );
   }
 
   return (
-    <ResponsiveContainer height="100%" minHeight={220} minWidth={280} width="100%">
+    <ResponsiveContainer height="100%" minHeight={128} minWidth={200} width="100%">
       {children}
     </ResponsiveContainer>
   );
 }
 
-function OperationalStat({
-  icon,
+function ChartTooltipContent({
+  active,
   label,
-  value,
+  payload,
 }: {
-  icon: ReactNode;
-  label: string;
-  value: ReactNode;
+  active?: boolean;
+  label?: string;
+  payload?: Array<{ color?: string; name?: string; value?: number }>;
 }) {
+  if (!active || !payload?.length) {
+    return null;
+  }
+
   return (
-    <div className="rounded-lg border border-border/55 bg-black/45 p-3 shadow-[inset_0_1px_0_hsl(var(--foreground)/0.035)]">
-      <div className="flex items-center gap-2 text-muted-foreground">
-        {icon}
-        <p className="text-xs">{label}</p>
+    <div className="rounded-lg border border-border/80 bg-card/95 px-3 py-2 text-xs shadow-lg backdrop-blur">
+      <p className="mb-1.5 font-medium text-foreground">{label}</p>
+      <div className="space-y-1">
+        {payload.map((entry) => (
+          <div className="flex items-center justify-between gap-4" key={entry.name}>
+            <span className="flex items-center gap-1.5 text-muted-foreground">
+              <span
+                className="h-2 w-2 rounded-full"
+                style={{ background: entry.color }}
+              />
+              {entry.name}
+            </span>
+            <span className="font-mono font-semibold text-foreground">{entry.value}</span>
+          </div>
+        ))}
       </div>
-      <div className="mt-2 min-w-0 font-mono text-sm font-semibold text-foreground">{value}</div>
     </div>
   );
 }
 
 function statusTone(status: CertificateStatus): StatusTone {
-  if (status === "valid") {
-    return "success";
-  }
-
-  if (status === "revoked" || status === "manipulated") {
-    return "danger";
-  }
-
-  if (status === "pending_reception") {
-    return "warning";
-  }
-
+  if (status === "valid") return "success";
+  if (status === "revoked" || status === "manipulated") return "danger";
+  if (status === "pending_reception") return "warning";
   return "neutral";
 }
 
-function countBy<T>(
-  items: T[],
-  getKey: (item: T) => string,
-) {
+function countBy<T>(items: T[], getKey: (item: T) => string) {
   const counts = new Map<string, number>();
-
   for (const item of items) {
     const key = getKey(item);
     counts.set(key, (counts.get(key) ?? 0) + 1);
   }
-
   return Array.from(counts, ([name, value]) => ({ name, value }));
 }
 
@@ -291,74 +223,72 @@ export function DashboardPage() {
   const verificationAttempts = useAppStore((state) =>
     Array.isArray(state.verificationAttempts) ? state.verificationAttempts : [],
   );
-  const verifierEntities = useAppStore((state) =>
-    Array.isArray(state.verifierEntities) ? state.verifierEntities : [],
-  );
   const ledgerEvents = useAppStore((state) =>
     Array.isArray(state.blockchainEvents) && state.blockchainEvents.length > 0
       ? state.blockchainEvents
       : blockchainEventFixtures,
   );
+  const activeRole = useAppStore((state) => state.activeRole);
   const wallet = useAppStore((state) => state.wallet);
+  const chainConnected = useAppStore((state) => state.chainConnected);
   const selectedNetwork = useAppStore((state) => state.selectedNetwork);
+  const connectWallet = useAppStore((state) => state.connectWallet);
   const setRoute = useAppStore((state) => state.setRoute);
   const addToast = useAppStore((state) => state.addToast);
+  const deployment = getDeploymentByNetwork(selectedNetwork);
+  const contractAddress = isDeploymentReady(deployment) ? deployment.address : "";
 
   const summary = useMemo(() => {
-    const valid = certificates.filter((certificate) => certificate.status === "valid").length;
-    const revoked = certificates.filter((certificate) => certificate.status === "revoked").length;
-    const pending = certificates.filter(
-      (certificate) => certificate.status === "pending_reception",
-    ).length;
-    const manipulated = certificates.filter(
-      (certificate) => certificate.status === "manipulated",
-    ).length;
-    const activeIssuers = issuers.filter((issuer) => issuer.active).length;
-    const syncedNodes = chainNodes.filter((node) => node.status === "synced").length;
-
-    return {
-      activeIssuers,
-      manipulated,
-      pending,
-      revoked,
-      syncedNodes,
-      valid,
-    };
+    const valid = certificates.filter((c) => c.status === "valid").length;
+    const revoked = certificates.filter((c) => c.status === "revoked").length;
+    const pending = certificates.filter((c) => c.status === "pending_reception").length;
+    const activeIssuers = issuers.filter((i) => i.active).length;
+    return { activeIssuers, pending, revoked, valid };
   }, [certificates, issuers]);
+
+  const quickActions = useMemo(
+    () =>
+      [
+        {
+          ariaLabel: "Acceso rapido: emitir certificado",
+          icon: FileSignature,
+          label: "Emitir",
+          routeId: "issue" as const,
+        },
+        {
+          ariaLabel: "Acceso rapido: verificar certificado",
+          icon: ShieldCheck,
+          label: "Verificar",
+          routeId: "verification" as const,
+        },
+        {
+          ariaLabel: "Acceso rapido: ledger blockchain",
+          icon: Database,
+          label: "Ledger",
+          routeId: "ledger" as const,
+        },
+        {
+          ariaLabel: "Acceso rapido: certificados emitidos",
+          icon: FileCheck2,
+          label: "Certificados",
+          routeId: "certificates" as const,
+        },
+      ].filter((action) => canNavigateToRoute(activeRole, action.routeId)),
+    [activeRole],
+  );
 
   const statusDistribution = useMemo(
     () =>
-      countBy(certificates, (certificate) => statusLabels[certificate.status]).map((item, index) => ({
+      countBy(certificates, (c) => statusLabels[c.status]).map((item, index) => ({
         ...item,
-        fill: chartColors[index % chartColors.length],
+        fill: chartPalette[index % chartPalette.length],
       })),
     [certificates],
   );
-
-  const facultyDistribution = useMemo(
-    () =>
-      countBy(certificates, (certificate) => certificate.faculty).map((item, index) => ({
-        ...item,
-        fill: chartColors[index % chartColors.length],
-      })),
-    [certificates],
-  );
-
-  const verificationByEntity = useMemo(() => {
-    const verifierById = new Map(verifierEntities.map((entity) => [entity.id, entity]));
-
-    return countBy(verificationAttempts, (attempt) => {
-      const entity = verifierById.get(attempt.verifierEntityId);
-      return entity ? verifierTypeLabels[entity.type] : "Sin entidad";
-    }).map((item, index) => ({
-      ...item,
-      fill: chartColors[index % chartColors.length],
-    }));
-  }, [verificationAttempts, verifierEntities]);
 
   const monthlyChartData = useMemo(
     () =>
-      monthlyActivity.slice(-8).map((item) => ({
+      monthlyActivity.slice(-6).map((item) => ({
         issued: item.issued,
         month: item.label,
         revoked: item.revoked,
@@ -371,13 +301,14 @@ export function DashboardPage() {
     () =>
       [...certificates]
         .sort((a, b) => new Date(b.issueDate).getTime() - new Date(a.issueDate).getTime())
-        .slice(0, 5),
+        .slice(0, 4),
     [certificates],
   );
 
-  const latestEvents = ledgerEvents.slice(0, 5);
+  const latestEvents = ledgerEvents.slice(0, 4);
   const latestBlock =
-    ledgerEvents.length > 0 ? Math.max(...ledgerEvents.map((event) => event.blockNumber)) : 0;
+    ledgerEvents.length > 0 ? Math.max(...ledgerEvents.map((e) => e.blockNumber)) : 0;
+  const statusTotal = statusDistribution.reduce((sum, item) => sum + item.value, 0);
   const totalCertificateCount = Math.max(certificates.length, 1);
   const totalIssuerCount = Math.max(issuers.length, 1);
 
@@ -385,162 +316,125 @@ export function DashboardPage() {
     setRoute(routeId);
     addToast({
       title: "Vista actualizada",
-      description: `El dashboard abrio ${label} con la transicion del sistema.`,
+      description: `El dashboard abrio ${label}.`,
       intent: "info",
     });
   };
 
-  const metricBars = {
-    activeIssuers: [38, 48, 58, 72, 76, 80],
-    emitted: [42, 56, 61, 70, 86, 92],
-    revoked: [18, 30, 42, 35, 50, 44],
-    risk: [54, 66, 70, 62, 76, 82],
-    valid: [34, 50, 67, 79, 74, 88],
-    verified: [28, 44, 58, 65, 78, 84],
-  };
-
   return (
-    <MotionPage className="grid min-w-0 gap-3" data-testid="dashboard-general">
+    <MotionPage className="grid min-w-0 gap-2.5" data-testid="dashboard-general">
       <section
-        className="grid min-w-0 gap-3 xl:grid-cols-[minmax(0,1.4fr)_minmax(22rem,0.72fr)]"
+        className="overflow-hidden rounded-xl border border-border/70 bg-card/90 shadow-[0_18px_40px_-30px_hsl(var(--shadow-ledger)/1)]"
         data-reveal
       >
-        <Card className="overflow-hidden">
-          <CardContent className="grid gap-5 p-4 lg:grid-cols-[minmax(0,1fr)_18rem] lg:p-5">
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <StatusPill tone="primary">Dashboard general</StatusPill>
-                <StatusPill tone="success">
-                  <span className="mr-1.5 inline-flex">
-                    <PulseDot />
-                  </span>
-                  Ethereum operativo
-                </StatusPill>
-                <StatusPill>{summary.syncedNodes}/4 nodos</StatusPill>
+        <div className="grid gap-3 p-3.5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <StatusPill tone="primary">Dashboard general</StatusPill>
+              <StatusPill tone={chainConnected ? "success" : "warning"}>
+                <span className="mr-1 inline-flex">
+                  <PulseDot tone={chainConnected ? "success" : "warning"} />
+                </span>
+                {chainConnected ? "Contrato activo" : "Modo lectura"}
+              </StatusPill>
+              <StatusPill>Bloque {numberFormatter.format(latestBlock)}</StatusPill>
+            </div>
+            <h1 className="mt-2.5 text-2xl font-semibold tracking-tight text-foreground md:text-[1.65rem]">
+              CertiChain Academico
+            </h1>
+            <p className="mt-1 max-w-xl text-xs leading-5 text-muted-foreground">
+              Emision universitaria, hash SHA-256, firma digital y verificacion publica en Ethereum.
+            </p>
+            {quickActions.length ? (
+              <div className="mt-3 flex flex-wrap gap-1.5">
+                {quickActions.map((action) => {
+                  const Icon = action.icon;
+                  return (
+                    <Button
+                      aria-label={action.ariaLabel}
+                      className="min-h-7 px-2.5 text-[11px]"
+                      icon={<Icon className="h-3.5 w-3.5" aria-hidden="true" />}
+                      key={action.routeId}
+                      onClick={() => navigate(action.routeId, action.label)}
+                      variant="secondary"
+                    >
+                      {action.label}
+                    </Button>
+                  );
+                })}
               </div>
-              <h1 className="mt-4 text-3xl font-semibold leading-tight tracking-tight text-foreground">
-                CertiChain Academico
-              </h1>
-              <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
-                Panel operativo para demostrar emision universitaria, hash SHA-256, firma digital,
-                trazabilidad Ethereum y verificacion publica de certificados academicos bolivianos.
+            ) : null}
+          </div>
+
+          <div className="grid min-w-[14rem] gap-1.5 sm:grid-cols-3 lg:grid-cols-1">
+            <div className="rounded-lg border border-border/60 bg-background/50 px-2.5 py-2">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">
+                Wallet institucional
               </p>
-              <div className="mt-5 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-                <Button
-                  aria-label="Acceso rapido: emitir certificado"
-                  icon={<FileSignature className="h-4 w-4" aria-hidden="true" />}
-                  onClick={() => navigate("issue", "Emitir Certificado")}
-                  variant="secondary"
-                >
-                  Emitir
-                </Button>
-                <Button
-                  aria-label="Acceso rapido: verificar certificado"
-                  icon={<ShieldCheck className="h-4 w-4" aria-hidden="true" />}
-                  onClick={() => navigate("verification", "Verificacion Publica")}
-                  variant="secondary"
-                >
-                  Verificar
-                </Button>
-                <Button
-                  aria-label="Acceso rapido: ledger blockchain"
-                  icon={<Database className="h-4 w-4" aria-hidden="true" />}
-                  onClick={() => navigate("ledger", "Ledger Blockchain")}
-                  variant="secondary"
-                >
-                  Ledger
-                </Button>
-                <Button
-                  aria-label="Acceso rapido: auditoria distribuida"
-                  icon={<ShieldAlert className="h-4 w-4" aria-hidden="true" />}
-                  onClick={() => navigate("audit", "Auditoria Distribuida")}
-                  variant="secondary"
-                >
-                  Auditoria
-                </Button>
+              <div className="mt-1 font-mono text-xs font-semibold text-foreground">
+                {wallet.connected ? (
+                  <span className="truncate">{shortenHash(wallet.address, 8)}</span>
+                ) : (
+                  <Button
+                    className="mt-0.5 h-7 w-full text-[11px]"
+                    icon={<PlugZap className="h-3.5 w-3.5" aria-hidden="true" />}
+                    onClick={() => void connectWallet()}
+                    variant="primary"
+                  >
+                    Conectar MetaMask
+                  </Button>
+                )}
               </div>
             </div>
-
-            <div className="grid gap-2">
-              <OperationalStat
-                icon={<WalletCards className="h-4 w-4" aria-hidden="true" />}
-                label="Wallet institucional"
-                value={
-                  <div className="grid gap-1">
-                    <span>{wallet.connected ? "Conectada" : "Lista para conectar"}</span>
-                    <span className="truncate text-xs text-muted-foreground">
-                      {shortenHash(wallet.address, 6)}
-                    </span>
-                  </div>
-                }
-              />
-              <OperationalStat
-                icon={<Globe2 className="h-4 w-4" aria-hidden="true" />}
-                label="Red Ethereum"
-                value={
-                  <span className="flex items-center gap-2">
-                    <PulseDot tone="primary" />
-                    {networkLabels[selectedNetwork]}
-                  </span>
-                }
-              />
-              <OperationalStat
-                icon={<Landmark className="h-4 w-4" aria-hidden="true" />}
-                label="Contrato academico"
-                value={<HashChip hash={CONTRACT_ADDRESS} size={8} />}
-              />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between gap-3">
-            <div>
-              <p className="text-sm font-semibold text-foreground">Riesgo documental evitado</p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Casos detectados sin depender de llamadas o validacion presencial.
+            <div className="rounded-lg border border-border/60 bg-background/50 px-2.5 py-2">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">
+                Red Ethereum
+              </p>
+              <p className="mt-1 flex items-center gap-1.5 text-xs font-medium text-foreground">
+                <PulseDot tone="primary" />
+                {networkLabels[selectedNetwork]}
               </p>
             </div>
-            <StatusPill tone="danger">{summary.manipulated} criticos</StatusPill>
-          </CardHeader>
-          <CardContent className="grid gap-3">
-            <div className="grid grid-cols-[auto_1fr_auto] items-center gap-3 rounded-lg border border-border/55 bg-black/45 p-3">
-              <ShieldAlert className="h-5 w-5 text-destructive" aria-hidden="true" />
-              <div>
-                <p className="text-sm font-semibold text-foreground">
-                  {summary.manipulated} documentos manipulados bloqueados
-                </p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  PDF alterado respecto al hash registrado.
-                </p>
+            <div className="rounded-lg border border-border/60 bg-background/50 px-2.5 py-2">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">
+                Contrato academico
+              </p>
+              <div className="mt-1">
+                {contractAddress ? (
+                  <HashChip hash={contractAddress} size={8} />
+                ) : (
+                  <span className="text-xs text-muted-foreground">Pendiente de despliegue</span>
+                )}
               </div>
-              <span className="font-mono text-lg text-foreground">{summary.manipulated}</span>
             </div>
-            <div className="grid grid-cols-[auto_1fr_auto] items-center gap-3 rounded-lg border border-border/55 bg-black/45 p-3">
-              <RotateCcw className="h-5 w-5 text-warning" aria-hidden="true" />
-              <div>
-                <p className="text-sm font-semibold text-foreground">
-                  {summary.revoked} certificados revocados trazables
-                </p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Correcciones administrativas sin borrar historial.
-                </p>
-              </div>
-              <span className="font-mono text-lg text-foreground">{summary.revoked}</span>
-            </div>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
+        {wallet.lastError ? (
+          <div className="border-t border-border/50 px-3.5 pb-3">
+            <p className="rounded-md border border-destructive/25 bg-destructive/10 px-2.5 py-1.5 text-[11px] text-destructive">
+              {wallet.lastError}
+            </p>
+          </div>
+        ) : null}
       </section>
 
-      <section className="grid min-w-0 gap-3 md:grid-cols-2 xl:grid-cols-3" data-reveal>
+      <section
+        className="grid min-w-0 auto-rows-fr gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6"
+        data-reveal
+      >
         <MetricCard
           actionLabel="Metrica: ver certificados emitidos"
           bars={metricBars.emitted}
+          compact
           delta={`${summary.pending} pendiente de recepcion`}
           detail="Registros anclados en ledger"
           icon={<FileCheck2 className="h-4 w-4" aria-hidden="true" />}
           label="Certificados emitidos"
-          onClick={() => navigate("certificates", "Certificados")}
+          onClick={
+            canNavigateToRoute(activeRole, "certificates")
+              ? () => navigate("certificates", "Certificados")
+              : undefined
+          }
           progress={92}
           testId="metric-total-certificates"
           tone="primary"
@@ -549,63 +443,79 @@ export function DashboardPage() {
         <MetricCard
           actionLabel="Metrica: ver certificados validos"
           bars={metricBars.valid}
+          compact
           delta="Disponibles para verificacion publica"
           detail="Sin revocacion ni alerta de hash"
           icon={<BadgeCheck className="h-4 w-4" aria-hidden="true" />}
           label="Certificados validos"
-          onClick={() => navigate("certificates", "Certificados")}
+          onClick={
+            canNavigateToRoute(activeRole, "certificates")
+              ? () => navigate("certificates", "Certificados")
+              : undefined
+          }
           progress={Math.round((summary.valid / totalCertificateCount) * 100)}
           testId="metric-valid-certificates"
           tone="success"
           value={String(summary.valid)}
         />
-        <MetricCard
-          actionLabel="Metrica: ver revocacion"
-          bars={metricBars.revoked}
-          delta="Historial preservado"
-          detail="Revocados por emisor autorizado"
-          icon={<RotateCcw className="h-4 w-4" aria-hidden="true" />}
-          label="Certificados revocados"
-          onClick={() => navigate("revocation", "Revocacion")}
-          progress={Math.round((summary.revoked / totalCertificateCount) * 100)}
-          testId="metric-revoked-certificates"
-          tone="warning"
-          value={String(summary.revoked)}
-        />
+        {canNavigateToRoute(activeRole, "revocation") ? (
+          <MetricCard
+            actionLabel="Metrica: ver revocacion"
+            bars={metricBars.revoked}
+            compact
+            delta="Historial preservado"
+            detail="Revocados por emisor autorizado"
+            icon={<RotateCcw className="h-4 w-4" aria-hidden="true" />}
+            label="Certificados revocados"
+            onClick={() => navigate("revocation", "Revocacion")}
+            progress={Math.round((summary.revoked / totalCertificateCount) * 100)}
+            testId="metric-revoked-certificates"
+            tone="warning"
+            value={String(summary.revoked)}
+          />
+        ) : null}
         <MetricCard
           actionLabel="Metrica: abrir verificacion publica"
           bars={metricBars.verified}
+          compact
           delta="Empresas, universidades y gobierno"
           detail="Consultas externas registradas"
           icon={<Globe2 className="h-4 w-4" aria-hidden="true" />}
           label="Verificaciones publicas"
-          onClick={() => navigate("verification", "Verificacion Publica")}
+          onClick={
+            canNavigateToRoute(activeRole, "verification")
+              ? () => navigate("verification", "Verificacion Publica")
+              : undefined
+          }
           progress={84}
           testId="metric-public-verifications"
           tone="accent"
           value={String(verificationAttempts.length)}
         />
+        {canNavigateToRoute(activeRole, "issuers") ? (
+          <MetricCard
+            actionLabel="Metrica: abrir emisores"
+            bars={metricBars.activeIssuers}
+            compact
+            delta={`${issuers.length - summary.activeIssuers} desactivado(s)`}
+            detail="Wallets universitarias activas"
+            icon={<Building2 className="h-4 w-4" aria-hidden="true" />}
+            label="Emisores activos"
+            onClick={() => navigate("issuers", "Emisores")}
+            progress={Math.round((summary.activeIssuers / totalIssuerCount) * 100)}
+            testId="metric-active-issuers"
+            tone="primary"
+            value={String(summary.activeIssuers)}
+          />
+        ) : null}
         <MetricCard
-          actionLabel="Metrica: abrir emisores"
-          bars={metricBars.activeIssuers}
-          delta={`${issuers.length - summary.activeIssuers} desactivado para auditoria`}
-          detail="Wallets universitarias activas"
-          icon={<Building2 className="h-4 w-4" aria-hidden="true" />}
-          label="Emisores activos"
-          onClick={() => navigate("issuers", "Emisores")}
-          progress={Math.round((summary.activeIssuers / totalIssuerCount) * 100)}
-          testId="metric-active-issuers"
-          tone="primary"
-          value={String(summary.activeIssuers)}
-        />
-        <MetricCard
-          actionLabel="Metrica: abrir auditoria documental"
+          actionLabel="Metrica: alertas documentales"
           bars={metricBars.risk}
-          delta="Evidencia de falsificacion simulada"
+          compact
+          delta="Evidencia de falsificacion detectada"
           detail="Alertas por hash no coincidente"
-          icon={<ShieldAlert className="h-4 w-4" aria-hidden="true" />}
+          icon={<Fingerprint className="h-4 w-4" aria-hidden="true" />}
           label="Riesgo documental evitado"
-          onClick={() => navigate("audit", "Auditoria Distribuida")}
           progress={76}
           testId="metric-risk-avoided"
           tone="danger"
@@ -613,214 +523,276 @@ export function DashboardPage() {
         />
       </section>
 
-      <section className="grid min-w-0 gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(22rem,0.58fr)]" data-reveal>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between gap-3">
+      <section className="grid min-w-0 gap-2.5 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]" data-reveal>
+        <Card className="overflow-hidden">
+          <CardHeader className="flex flex-row items-center justify-between gap-2 border-b border-border/60 px-3.5 py-2.5">
             <div>
-              <p className="text-sm font-semibold text-foreground">
-                Timeline academico-blockchain
-              </p>
-              <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                Flujo completo desde PDF universitario hasta verificacion independiente.
-              </p>
+              <p className="text-xs font-semibold text-foreground">Certificados por estado</p>
+              <p className="text-[11px] text-muted-foreground">Distribucion contractual</p>
             </div>
-            <StatusPill tone="success">7 pasos</StatusPill>
+            <StatusBadge tone="neutral">{statusTotal} total</StatusBadge>
           </CardHeader>
-          <CardContent>
-            <ol className="grid gap-2 lg:grid-cols-7">
-              {flowSteps.map((step, index) => {
-                const Icon = step.icon;
-
+          <CardContent className="grid gap-2 p-3.5 sm:grid-cols-[10rem_minmax(0,1fr)] sm:items-center">
+            <div className="relative h-36 rounded-xl border border-border/50 bg-muted/30 p-2">
+              <div
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-3 rounded-full border border-dashed border-border/70"
+              />
+              <ResponsiveChart>
+                <PieChart>
+                  <defs>
+                    {statusDistribution.map((item, index) => (
+                      <linearGradient
+                        id={`status-slice-${index}`}
+                        key={item.name}
+                        x1="0"
+                        x2="1"
+                        y1="0"
+                        y2="1"
+                      >
+                        <stop offset="0%" stopColor={item.fill} stopOpacity={1} />
+                        <stop offset="100%" stopColor={item.fill} stopOpacity={0.55} />
+                      </linearGradient>
+                    ))}
+                  </defs>
+                  <Pie
+                    cornerRadius={5}
+                    data={statusDistribution}
+                    dataKey="value"
+                    innerRadius={40}
+                    outerRadius={60}
+                    paddingAngle={3}
+                    stroke="hsl(var(--card))"
+                    strokeWidth={3}
+                  >
+                    {statusDistribution.map((item, index) => (
+                      <Cell fill={`url(#status-slice-${index})`} key={item.name} />
+                    ))}
+                  </Pie>
+                </PieChart>
+              </ResponsiveChart>
+              <div className="pointer-events-none absolute inset-0 grid place-items-center">
+                <div className="rounded-full border border-border/60 bg-card/90 px-3 py-2 text-center shadow-sm">
+                  <p className="font-mono text-base font-semibold text-foreground">{statusTotal}</p>
+                  <p className="text-[9px] uppercase tracking-[0.14em] text-muted-foreground">
+                    Total
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className="grid gap-1.5">
+              {statusDistribution.map((item) => {
+                const percent = statusTotal > 0 ? Math.round((item.value / statusTotal) * 100) : 0;
                 return (
-                  <li
-                    className="relative rounded-lg border border-border/55 bg-black/45 p-3 shadow-[inset_0_1px_0_hsl(var(--foreground)/0.035)]"
-                    key={step.title}
+                  <div
+                    className="rounded-md border border-border/50 bg-muted/35 px-2.5 py-1.5"
+                    key={item.name}
                   >
                     <div className="flex items-center justify-between gap-2">
-                      <span className="grid h-8 w-8 place-items-center rounded-md border border-border/80 bg-secondary text-primary">
-                        <Icon className="h-4 w-4" aria-hidden="true" />
+                      <span className="flex min-w-0 items-center gap-2 text-[11px] text-muted-foreground">
+                        <span
+                          className="h-2.5 w-2.5 shrink-0 rounded-sm"
+                          style={{ background: item.fill }}
+                        />
+                        <span className="truncate">{item.name}</span>
                       </span>
-                      <span className="font-mono text-[11px] text-muted-foreground">
-                        {String(index + 1).padStart(2, "0")}
+                      <span className="font-mono text-xs font-semibold text-foreground">
+                        {item.value}
                       </span>
                     </div>
-                    <p className="mt-3 text-xs font-semibold text-foreground">{step.title}</p>
-                    <p className="mt-2 text-[11px] leading-5 text-muted-foreground">
-                      {step.detail}
-                    </p>
-                  </li>
+                    <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-muted/70">
+                      <div
+                        className="h-full rounded-full"
+                        style={{ background: item.fill, width: `${percent}%` }}
+                      />
+                    </div>
+                  </div>
                 );
               })}
-            </ol>
+            </div>
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between gap-3">
+        <Card className="overflow-hidden">
+          <CardHeader className="flex flex-row items-center justify-between gap-2 border-b border-border/60 px-3.5 py-2.5">
             <div>
-              <p className="text-sm font-semibold text-foreground">Estado distribuido</p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Replicacion disponible aunque una universidad este fuera de linea.
-              </p>
+              <p className="text-xs font-semibold text-foreground">Actividad mensual</p>
+              <p className="text-[11px] text-muted-foreground">Emisiones, verificaciones y revocaciones</p>
             </div>
-            <StatusPill tone="primary">Bloque {numberFormatter.format(latestBlock)}</StatusPill>
+            <div className="flex items-center gap-1.5">
+              <span className="rounded-full border border-primary/25 bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">
+                6 meses
+              </span>
+              <TrendingUp className="h-4 w-4 text-primary" aria-hidden="true" />
+            </div>
           </CardHeader>
-          <CardContent className="grid gap-2">
-            {chainNodes.map((node) => (
-              <div
-                className="grid grid-cols-[1fr_auto] items-center gap-3 rounded-lg border border-border/45 bg-black/35 px-3 py-2"
-                key={node.id}
-              >
-                <div className="min-w-0">
-                  <p className="truncate text-xs font-semibold text-foreground">{node.label}</p>
-                  <p className="mt-1 text-[11px] text-muted-foreground">{node.location}</p>
-                </div>
-                <StatusBadge tone={node.status === "synced" ? "online" : "warning"}>
-                  {node.status === "synced" ? "sync" : "lag"}
-                </StatusBadge>
-              </div>
-            ))}
+          <CardContent className="p-3.5 pt-2">
+            <div className="mb-2 flex flex-wrap gap-1.5">
+              {[
+                { color: "hsl(var(--primary))", label: "Emitidos" },
+                { color: "hsl(var(--success))", label: "Verificados" },
+                { color: "hsl(var(--warning))", label: "Revocados" },
+              ].map((item) => (
+                <span
+                  className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-muted/35 px-2 py-0.5 text-[10px] text-muted-foreground"
+                  key={item.label}
+                >
+                  <span className="h-1.5 w-3 rounded-full" style={{ background: item.color }} />
+                  {item.label}
+                </span>
+              ))}
+            </div>
+            <div className="h-36 rounded-xl border border-border/50 bg-muted/25 p-2">
+              <ResponsiveChart>
+                <AreaChart
+                  data={monthlyChartData}
+                  margin={{ left: -16, right: 6, top: 10, bottom: 0 }}
+                >
+                  <defs>
+                    <linearGradient id="issuedFill" x1="0" x2="0" y1="0" y2="1">
+                      <stop offset="0%" stopColor="hsl(var(--primary))" stopOpacity={0.42} />
+                      <stop offset="100%" stopColor="hsl(var(--primary))" stopOpacity={0.02} />
+                    </linearGradient>
+                    <linearGradient id="verifiedFill" x1="0" x2="0" y1="0" y2="1">
+                      <stop offset="0%" stopColor="hsl(var(--success))" stopOpacity={0.34} />
+                      <stop offset="100%" stopColor="hsl(var(--success))" stopOpacity={0.02} />
+                    </linearGradient>
+                    <filter id="areaGlow">
+                      <feGaussianBlur result="blur" stdDeviation="1.8" />
+                    </filter>
+                  </defs>
+                  <CartesianGrid
+                    stroke="hsl(var(--chart-grid))"
+                    strokeDasharray="2 8"
+                    vertical={false}
+                  />
+                  <XAxis
+                    axisLine={false}
+                    dataKey="month"
+                    tick={{ fill: "hsl(var(--chart-muted))", fontSize: 10 }}
+                    tickLine={false}
+                  />
+                  <YAxis
+                    axisLine={false}
+                    tick={{ fill: "hsl(var(--chart-muted))", fontSize: 10 }}
+                    tickLine={false}
+                    width={22}
+                  />
+                  <ChartTooltip content={<ChartTooltipContent />} />
+                  <Area
+                    activeDot={{ fill: "hsl(var(--primary))", r: 3, strokeWidth: 0 }}
+                    dataKey="issued"
+                    dot={false}
+                    fill="url(#issuedFill)"
+                    name="Emitidos"
+                    stroke="hsl(var(--primary))"
+                    strokeWidth={2.5}
+                    type="monotone"
+                  />
+                  <Area
+                    activeDot={{ fill: "hsl(var(--success))", r: 3, strokeWidth: 0 }}
+                    dataKey="verified"
+                    dot={false}
+                    fill="url(#verifiedFill)"
+                    name="Verificados"
+                    stroke="hsl(var(--success))"
+                    strokeWidth={2.5}
+                    type="monotone"
+                  />
+                  <Area
+                    activeDot={{ fill: "hsl(var(--warning))", r: 3, strokeWidth: 0 }}
+                    dataKey="revoked"
+                    dot={{ fill: "hsl(var(--warning))", r: 2, strokeWidth: 0 }}
+                    fill="transparent"
+                    name="Revocados"
+                    stroke="hsl(var(--warning))"
+                    strokeDasharray="5 4"
+                    strokeWidth={2}
+                    type="monotone"
+                  />
+                </AreaChart>
+              </ResponsiveChart>
+            </div>
           </CardContent>
         </Card>
       </section>
 
-      <section className="grid min-w-0 gap-3 2xl:grid-cols-4" data-reveal>
-        <ChartCard
-          description="Estados contractuales de los certificados academicos."
-          title="Certificados por estado"
-        >
-          <ResponsiveChart>
-            <PieChart>
-              <Pie data={statusDistribution} dataKey="value" innerRadius={48} outerRadius={76} paddingAngle={3}>
-                {statusDistribution.map((item) => (
-                  <Cell fill={item.fill} key={item.name} />
-                ))}
-              </Pie>
-              <ChartTooltip
-                contentStyle={{
-                  background: "hsl(var(--card))",
-                  border: "1px solid hsl(var(--border))",
-                  borderRadius: 8,
-                  color: "hsl(var(--foreground))",
-                }}
-              />
-            </PieChart>
-          </ResponsiveChart>
-        </ChartCard>
+      <Card data-reveal>
+        <CardHeader className="flex flex-row items-center justify-between gap-2 px-3.5 py-2.5">
+          <div>
+            <p className="text-xs font-semibold text-foreground">Flujo academico-blockchain</p>
+            <p className="text-[11px] text-muted-foreground">Ciclo de vida del certificado</p>
+          </div>
+          <StatusBadge tone="neutral">4 pasos</StatusBadge>
+        </CardHeader>
+        <CardContent className="px-3.5 pb-3.5 pt-0">
+          <ol className="grid gap-1.5 sm:grid-cols-2 xl:grid-cols-4" data-testid="dashboard-flow-steps">
+            {flowSteps.map((step, index) => {
+              const Icon = step.icon;
+              return (
+                <li
+                  className="flex items-center gap-2.5 rounded-lg border border-border/55 bg-background/45 px-2.5 py-2"
+                  key={step.title}
+                >
+                  <span className="grid h-7 w-7 shrink-0 place-items-center rounded-md border border-border/70 bg-card text-primary">
+                    <Icon className="h-3.5 w-3.5" aria-hidden="true" />
+                  </span>
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-semibold text-foreground">
+                      <span className="mr-1 font-mono text-[9px] text-muted-foreground">
+                        {String(index + 1).padStart(2, "0")}
+                      </span>
+                      {step.title}
+                    </p>
+                    <p className="truncate text-[10px] text-muted-foreground">{step.detail}</p>
+                  </div>
+                </li>
+              );
+            })}
+          </ol>
+        </CardContent>
+      </Card>
 
-        <ChartCard
-          description="Distribucion academica por facultad emisora."
-          title="Certificados por facultad"
-        >
-          <ResponsiveChart>
-            <BarChart data={facultyDistribution} layout="vertical" margin={{ left: 8, right: 8 }}>
-              <CartesianGrid horizontal={false} stroke="hsl(var(--border))" strokeDasharray="3 3" />
-              <XAxis axisLine={false} tickLine={false} type="number" />
-              <YAxis axisLine={false} dataKey="name" hide tickLine={false} type="category" />
-              <ChartTooltip
-                contentStyle={{
-                  background: "hsl(var(--card))",
-                  border: "1px solid hsl(var(--border))",
-                  borderRadius: 8,
-                }}
-              />
-              <Bar dataKey="value" radius={[0, 6, 6, 0]}>
-                {facultyDistribution.map((item) => (
-                  <Cell fill={item.fill} key={item.name} />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveChart>
-        </ChartCard>
-
-        <ChartCard
-          description="Emisiones y verificaciones durante la demo mensual."
-          title="Actividad mensual"
-        >
-          <ResponsiveChart>
-            <LineChart data={monthlyChartData} margin={{ left: 0, right: 8, top: 8 }}>
-              <CartesianGrid stroke="hsl(var(--border))" strokeDasharray="3 3" vertical={false} />
-              <XAxis axisLine={false} dataKey="month" tickLine={false} />
-              <YAxis axisLine={false} tickLine={false} width={28} />
-              <ChartTooltip
-                contentStyle={{
-                  background: "hsl(var(--card))",
-                  border: "1px solid hsl(var(--border))",
-                  borderRadius: 8,
-                }}
-              />
-              <Line dataKey="issued" dot={false} name="Emitidos" stroke="hsl(var(--primary))" strokeWidth={2} />
-              <Line dataKey="verified" dot={false} name="Verificados" stroke="hsl(var(--success))" strokeWidth={2} />
-              <Line dataKey="revoked" dot={false} name="Revocados" stroke="hsl(var(--warning))" strokeWidth={2} />
-            </LineChart>
-          </ResponsiveChart>
-        </ChartCard>
-
-        <ChartCard
-          description="Origen de las consultas publicas al verificador."
-          title="Verificaciones por entidad"
-        >
-          <ResponsiveChart>
-            <BarChart data={verificationByEntity} margin={{ left: 0, right: 8, top: 8 }}>
-              <CartesianGrid stroke="hsl(var(--border))" strokeDasharray="3 3" vertical={false} />
-              <XAxis axisLine={false} dataKey="name" tickLine={false} />
-              <YAxis axisLine={false} tickLine={false} width={24} />
-              <ChartTooltip
-                contentStyle={{
-                  background: "hsl(var(--card))",
-                  border: "1px solid hsl(var(--border))",
-                  borderRadius: 8,
-                }}
-              />
-              <Bar dataKey="value" radius={[6, 6, 0, 0]}>
-                {verificationByEntity.map((item) => (
-                  <Cell fill={item.fill} key={item.name} />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveChart>
-        </ChartCard>
-      </section>
-
-      <section className="grid min-w-0 gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(24rem,0.72fr)]" data-reveal>
+      <section className="grid min-w-0 gap-2.5 xl:grid-cols-2" data-reveal>
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between gap-3">
+          <CardHeader className="flex flex-row items-center justify-between gap-2 px-3.5 py-2.5">
             <div className="flex items-center gap-2">
-              <Activity className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
-              <p className="text-sm font-semibold text-foreground">Ultimas transacciones</p>
+              <Activity className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
+              <p className="text-xs font-semibold text-foreground">Ultimas transacciones</p>
             </div>
-            <Button
-              icon={<ArrowUpRight className="h-4 w-4" aria-hidden="true" />}
-              onClick={() => navigate("ledger", "Ledger Blockchain")}
-              variant="secondary"
-            >
-              Ver ledger
-            </Button>
+            {canNavigateToRoute(activeRole, "ledger") ? (
+              <Button
+                className="min-h-7 px-2 text-[11px]"
+                icon={<ArrowUpRight className="h-3.5 w-3.5" aria-hidden="true" />}
+                onClick={() => navigate("ledger", "Ledger Blockchain")}
+                variant="secondary"
+              >
+                Ver ledger
+              </Button>
+            ) : null}
           </CardHeader>
-          <CardContent>
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[44rem] text-left text-xs">
-                <thead className="bg-black/55 text-muted-foreground">
+          <CardContent className="px-3.5 pb-3.5 pt-0">
+            <div className="overflow-x-auto rounded-lg border border-border/55">
+              <table className="w-full min-w-[32rem] text-left text-[11px]">
+                <thead className="bg-muted/50 text-muted-foreground">
                   <tr>
-                    <th className="rounded-l-md px-3 py-2 font-medium">Bloque</th>
-                    <th className="px-3 py-2 font-medium">Evento</th>
-                    <th className="px-3 py-2 font-medium">Certificado</th>
-                    <th className="px-3 py-2 font-medium">Hash tx</th>
-                    <th className="rounded-r-md px-3 py-2 text-right font-medium">Fecha</th>
+                    <th className="px-2.5 py-1.5 font-medium">Bloque</th>
+                    <th className="px-2.5 py-1.5 font-medium">Evento</th>
+                    <th className="px-2.5 py-1.5 font-medium">Certificado</th>
+                    <th className="px-2.5 py-1.5 text-right font-medium">Fecha</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-border">
+                <tbody className="divide-y divide-border/70">
                   {latestEvents.map((event) => (
-                    <tr className="text-foreground/85" key={event.id}>
-                      <td className="px-3 py-3 font-mono text-muted-foreground">
+                    <tr className="text-foreground/90" key={event.id}>
+                      <td className="px-2.5 py-2 font-mono text-muted-foreground">
                         {numberFormatter.format(event.blockNumber)}
                       </td>
-                      <td className="px-3 py-3">{event.type}</td>
-                      <td className="px-3 py-3 font-mono text-muted-foreground">
-                        {event.certificateId ?? "emisor"}
+                      <td className="px-2.5 py-2">{event.type}</td>
+                      <td className="px-2.5 py-2 font-mono text-muted-foreground">
+                        {event.certificateId ?? "—"}
                       </td>
-                      <td className="px-3 py-3 font-mono">{shortenHash(event.transactionHash, 7)}</td>
-                      <td className="px-3 py-3 text-right text-muted-foreground">
+                      <td className="px-2.5 py-2 text-right text-muted-foreground">
                         {formatDateTime(event.createdAt)}
                       </td>
                     </tr>
@@ -832,33 +804,36 @@ export function DashboardPage() {
         </Card>
 
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between gap-3">
+          <CardHeader className="flex flex-row items-center justify-between gap-2 px-3.5 py-2.5">
             <div className="flex items-center gap-2">
-              <FileCheck2 className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
-              <p className="text-sm font-semibold text-foreground">Ultimos certificados emitidos</p>
+              <FileCheck2 className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
+              <p className="text-xs font-semibold text-foreground">Ultimos certificados emitidos</p>
             </div>
-            <Button
-              icon={<ArrowUpRight className="h-4 w-4" aria-hidden="true" />}
-              onClick={() => navigate("certificates", "Certificados")}
-              variant="secondary"
-            >
-              Ver todos
-            </Button>
+            {canNavigateToRoute(activeRole, "certificates") ? (
+              <Button
+                className="min-h-7 px-2 text-[11px]"
+                icon={<ArrowUpRight className="h-3.5 w-3.5" aria-hidden="true" />}
+                onClick={() => navigate("certificates", "Certificados")}
+                variant="secondary"
+              >
+                Ver todos
+              </Button>
+            ) : null}
           </CardHeader>
-          <CardContent className="grid gap-2">
+          <CardContent className="grid gap-1.5 px-3.5 pb-3.5 pt-0">
             {latestCertificates.map((certificate) => (
               <button
-                className="grid w-full grid-cols-[1fr_auto] items-start gap-3 rounded-lg border border-border/55 bg-black/40 p-3 text-left transition-colors hover:border-foreground/25 hover:bg-black/55 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/25"
+                className="grid w-full grid-cols-[1fr_auto] items-center gap-2 rounded-lg border border-border/55 bg-background/40 px-2.5 py-2 text-left transition-colors hover:border-foreground/20 hover:bg-background/70 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/25"
                 key={certificate.id}
                 onClick={() => navigate("certificates", certificate.code)}
                 type="button"
               >
                 <span className="min-w-0">
-                  <span className="block font-mono text-xs font-semibold text-foreground">
+                  <span className="block font-mono text-[11px] font-semibold text-foreground">
                     {certificate.code}
                   </span>
-                  <span className="mt-1 block truncate text-xs text-muted-foreground">
-                    {certificate.studentName} | {typeLabels[certificate.type]}
+                  <span className="mt-0.5 block truncate text-[10px] text-muted-foreground">
+                    {certificate.studentName} · {typeLabels[certificate.type]}
                   </span>
                 </span>
                 <StatusPill tone={statusTone(certificate.status)}>

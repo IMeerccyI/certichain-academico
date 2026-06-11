@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it } from "vitest";
 import App from "@/app/App";
@@ -6,6 +6,7 @@ import { useAppStore } from "@/store/app-store";
 
 describe("Prompt 07 certificate issuing flow", () => {
   beforeEach(() => {
+    Reflect.deleteProperty(window, "ethereum");
     window.localStorage.clear();
     useAppStore.getState().resetDemoData();
     useAppStore.getState().setRoute("issue");
@@ -28,7 +29,7 @@ describe("Prompt 07 certificate issuing flow", () => {
       /fecha de emision/i,
       /emisor autorizado/i,
       /cargo del emisor/i,
-      /archivo pdf simulado/i,
+      /archivo pdf/i,
       /observaciones/i,
     ]) {
       expect(within(page).getAllByText(label).length).toBeGreaterThan(0);
@@ -42,10 +43,10 @@ describe("Prompt 07 certificate issuing flow", () => {
 
     for (const step of [
       /validar datos/i,
-      /preparar pdf simulado/i,
+      /preparar pdf/i,
       /calcular hash sha-256/i,
       /firmar digitalmente la emision/i,
-      /enviar transaccion mock/i,
+      /enviar transaccion ethereum/i,
       /esperar confirmacion de bloque/i,
       /registrar certificado/i,
       /agregar evento al ledger/i,
@@ -64,23 +65,36 @@ describe("Prompt 07 certificate issuing flow", () => {
 
     await user.click(within(page).getByRole("button", { name: /^emitir certificado$/i }));
 
-    expect(screen.getByText(/conecta una wallet institucional/i)).toBeInTheDocument();
+    expect(screen.getByText(/conecta metamask con el contrato academico/i)).toBeInTheDocument();
+    expect(screen.getByText(/carga un archivo pdf real/i)).toBeInTheDocument();
     expect(screen.getByText(/completa los campos obligatorios/i)).toBeInTheDocument();
     expect(useAppStore.getState().certificates).toHaveLength(initialCount);
 
-    useAppStore.getState().connectWalletMock();
     useAppStore.getState().setActiveRole("student");
-    await user.click(within(page).getByRole("button", { name: /^emitir certificado$/i }));
 
-    expect(screen.getByText(/el rol activo no puede emitir certificados/i)).toBeInTheDocument();
+    const blockedIssue = await useAppStore.getState().issueCertificate({
+      career: "Ingenieria de Sistemas",
+      certificateType: "grade_certificate",
+      faculty: "Facultad de Tecnologia",
+      identityDocument: "LP-7482910",
+      issuerId: "issuer-rector-umsa",
+      observations: "Debe bloquearse por rol estudiante.",
+      pdfName: "bloqueado.pdf",
+      studentId: "student-juan",
+      university: "Universidad Mayor de San Andres",
+    });
+
+    expect(blockedIssue).toBeNull();
+    expect(
+      useAppStore.getState().toasts.some((toast) => /emision bloqueada/i.test(toast.title)),
+    ).toBe(true);
     expect(useAppStore.getState().certificates).toHaveLength(initialCount);
   });
 
-  it("issues a certificate, appends ledger event and exposes post-issue actions", async () => {
+  it("does not create a fake transaction when the contract is not connected", async () => {
     const user = userEvent.setup();
     const initialCertificates = useAppStore.getState().certificates.length;
     const initialEvents = useAppStore.getState().blockchainEvents.length;
-    useAppStore.getState().connectWalletMock();
     useAppStore.getState().setActiveRole("authorized_issuer");
 
     render(<App />);
@@ -88,20 +102,16 @@ describe("Prompt 07 certificate issuing flow", () => {
 
     await user.click(within(page).getByRole("button", { name: /seleccionar estudiante juan perez/i }));
     await user.click(within(page).getByRole("button", { name: /usar emisor rectorado umsa/i }));
+    await user.upload(
+      within(page).getByLabelText(/archivo pdf/i),
+      new File(["certificado sin contrato"], "certificado.pdf", { type: "application/pdf" }),
+    );
     await user.click(within(page).getByRole("button", { name: /^emitir certificado$/i }));
 
-    await waitFor(() => {
-      expect(screen.getByText(/certificado emitido/i)).toBeInTheDocument();
-    });
-
-    expect(useAppStore.getState().certificates).toHaveLength(initialCertificates + 1);
-    expect(useAppStore.getState().blockchainEvents.length).toBeGreaterThan(initialEvents);
-    expect(screen.getByText(/hash generado/i)).toBeInTheDocument();
-    expect(screen.getByText(/transaction hash/i)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /copiar hash/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /copiar transaction hash/i })).toBeInTheDocument();
-
-    await user.click(screen.getByRole("button", { name: /ver detalle/i }));
-    expect(useAppStore.getState().currentRouteId).toBe("certificates");
+    expect(screen.getByText(/conecta metamask con el contrato academico/i)).toBeInTheDocument();
+    expect(useAppStore.getState().certificates).toHaveLength(initialCertificates);
+    expect(useAppStore.getState().blockchainEvents).toHaveLength(initialEvents);
+    expect(screen.queryByText(/certificado emitido/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/tx mock/i)).not.toBeInTheDocument();
   });
 });

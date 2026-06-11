@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useGSAP } from "@gsap/react";
 import { gsap } from "gsap";
@@ -21,6 +21,7 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
+import { canSignStudentReception } from "@/lib/ui-permissions";
 import { cn } from "@/lib/cn";
 import { formatDateTime, numberFormatter } from "@/lib/formatters";
 import { shortenHash } from "@/lib/hash";
@@ -75,7 +76,7 @@ function MetricTile({
   value: string;
 }) {
   return (
-    <div className="rounded-md border border-border/60 bg-black/38 p-3">
+    <div className="rounded-md border border-border/60 bg-muted/48 p-3">
       <div className="flex items-center justify-between gap-3">
         <span className="grid h-8 w-8 shrink-0 place-items-center rounded-md border border-border/60 bg-secondary text-muted-foreground">
           {icon}
@@ -139,17 +140,34 @@ function statusTone(status: Certificate["status"]) {
 
 export function StudentsPage() {
   const pageRef = useRef<HTMLDivElement>(null);
+  const activeRole = useAppStore((state) => state.activeRole);
+  const activePersona = useAppStore((state) => state.activePersona);
   const students = useAppStore((state) => state.students);
   const certificates = useAppStore((state) => state.certificates);
   const blockchainEvents = useAppStore((state) => state.blockchainEvents);
+  const chainConnected = useAppStore((state) => state.chainConnected);
   const signStudentReception = useAppStore((state) => state.signStudentReception);
   const addToast = useAppStore((state) => state.addToast);
   const reducedMotion = useReducedMotion();
   const [selectedStudentId, setSelectedStudentId] = useState(students[0]?.id ?? "");
   const [signedCertificateId, setSignedCertificateId] = useState<string | null>(null);
 
+  const scopedStudents = useMemo(() => {
+    if (activeRole === "student" && activePersona.studentId) {
+      return students.filter((student) => student.id === activePersona.studentId);
+    }
+
+    return students;
+  }, [activePersona.studentId, activeRole, students]);
+
+  useEffect(() => {
+    if (activeRole === "student" && activePersona.studentId) {
+      setSelectedStudentId(activePersona.studentId);
+    }
+  }, [activePersona.studentId, activeRole]);
+
   const studentViews = useMemo<StudentView[]>(() => {
-    return students.map((student) => {
+    return scopedStudents.map((student) => {
       const studentCertificates = certificates.filter((certificate) => certificate.studentId === student.id);
       const ids = new Set(studentCertificates.map((certificate) => certificate.id));
       const events = blockchainEvents.filter(
@@ -172,7 +190,7 @@ export function StudentsPage() {
         student,
       };
     });
-  }, [blockchainEvents, certificates, students]);
+  }, [blockchainEvents, certificates, scopedStudents]);
 
   const selectedStudent =
     studentViews.find((item) => item.student.id === selectedStudentId) ?? studentViews[0];
@@ -213,7 +231,7 @@ export function StudentsPage() {
     { dependencies: [signedCertificateId, reducedMotion], revertOnUpdate: true, scope: pageRef },
   );
 
-  const signReception = () => {
+  const signReception = async () => {
     if (!pendingCertificate) {
       addToast({
         title: "Sin recepcion pendiente",
@@ -223,7 +241,7 @@ export function StudentsPage() {
       return;
     }
 
-    const signed = signStudentReception(pendingCertificate.id);
+    const signed = await signStudentReception(pendingCertificate.id);
     setSignedCertificateId(signed?.id ?? pendingCertificate.id);
   };
 
@@ -242,7 +260,9 @@ export function StudentsPage() {
             <div className="min-w-0">
               <div className="mb-3 flex flex-wrap gap-2">
                 <StatusBadge tone="online">Identidad academica</StatusBadge>
-                <StatusBadge tone="syncing">Firma de recepcion</StatusBadge>
+                <StatusBadge tone={chainConnected ? "online" : "warning"}>
+                  {chainConnected ? "Contrato conectado" : "Contrato requerido"}
+                </StatusBadge>
                 <StatusBadge tone="neutral">Wallet estudiantil</StatusBadge>
               </div>
               <h1 className="text-2xl font-semibold tracking-tight text-foreground">
@@ -250,7 +270,7 @@ export function StudentsPage() {
               </h1>
               <p className="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground">
                 Cada perfil asocia documento de identidad, carrera, wallet y certificados
-                recibidos. La firma de recepcion simula que el estudiante acepta el documento
+                recibidos. La firma de recepcion registra que el estudiante acepta el documento
                 emitido sin alterar el historial previo.
               </p>
             </div>
@@ -280,21 +300,21 @@ export function StudentsPage() {
               <div>
                 <p className="text-sm font-semibold text-foreground">Lista de estudiantes</p>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Identidad, carrera, wallet simulada, certificados recibidos y firma de recepcion.
+                  Identidad, carrera, wallet registrada, certificados recibidos y firma de recepcion.
                 </p>
               </div>
               <StatusBadge tone="neutral">{numberFormatter.format(studentViews.length)} perfiles</StatusBadge>
             </CardHeader>
             <CardContent>
-              <div className="overflow-x-auto rounded-lg border border-border bg-black/30">
+              <div className="overflow-x-auto rounded-lg border border-border bg-muted/40">
                 <table className="w-full min-w-[58rem] text-left text-xs" data-testid="students-table">
-                  <thead className="bg-black/55 text-muted-foreground">
+                  <thead className="bg-muted/65 text-muted-foreground">
                     <tr>
                       <th className="px-3 py-2 font-medium">Nombre</th>
                       <th className="px-3 py-2 font-medium">Documento de identidad</th>
                       <th className="px-3 py-2 font-medium">Carrera</th>
                       <th className="px-3 py-2 font-medium">Facultad</th>
-                      <th className="px-3 py-2 font-medium">Wallet simulada</th>
+                      <th className="px-3 py-2 font-medium">Wallet estudiantil</th>
                       <th className="px-3 py-2 text-right font-medium">Certificados recibidos</th>
                       <th className="px-3 py-2 font-medium">Firma de recepcion</th>
                       <th className="px-3 py-2 font-medium">Estado academico</th>
@@ -369,7 +389,7 @@ export function StudentsPage() {
             <CardContent className="grid gap-3">
               {selectedStudent ? (
                 <>
-                  <div className="rounded-md border border-border/55 bg-black/45 p-3">
+                  <div className="rounded-md border border-border/55 bg-muted/55 p-3">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <p className="text-sm font-semibold text-foreground">{selectedStudent.student.fullName}</p>
@@ -394,7 +414,7 @@ export function StudentsPage() {
                     </div>
                   </div>
 
-                  <div className="rounded-md border border-border/55 bg-black/35 p-3">
+                  <div className="rounded-md border border-border/55 bg-muted/45 p-3">
                     <div className="flex items-center justify-between gap-3">
                       <div>
                         <p className="text-xs font-semibold text-foreground">Firma de recepcion</p>
@@ -405,15 +425,17 @@ export function StudentsPage() {
                       <span className="font-mono text-sm font-semibold text-foreground">{receptionProgress}%</span>
                     </div>
                     <Progress className="mt-3" value={receptionProgress} />
-                    <Button
-                      className="mt-3 w-full"
-                      disabled={!pendingCertificate}
-                      icon={<PenLine className="h-4 w-4" aria-hidden="true" />}
-                      onClick={signReception}
-                      variant={pendingCertificate ? "primary" : "secondary"}
-                    >
-                      {pendingCertificate ? "Firmar recepcion" : "Recepcion completa"}
-                    </Button>
+                    {canSignStudentReception(activeRole) ? (
+                      <Button
+                        className="mt-3 w-full"
+                        disabled={!pendingCertificate}
+                        icon={<PenLine className="h-4 w-4" aria-hidden="true" />}
+                        onClick={signReception}
+                        variant={pendingCertificate ? "primary" : "secondary"}
+                      >
+                        {pendingCertificate ? "Firmar recepcion" : "Recepcion completa"}
+                      </Button>
+                    ) : null}
                   </div>
 
                   <div className="grid gap-2">
@@ -424,7 +446,7 @@ export function StudentsPage() {
                     <ol className="grid gap-2">
                       {selectedStudent.certificates.map((certificate) => (
                         <li
-                          className="rounded-md border border-border/55 bg-black/35 p-3"
+                          className="rounded-md border border-border/55 bg-muted/45 p-3"
                           data-certificate-id={certificate.id}
                           key={certificate.id}
                         >
@@ -460,7 +482,7 @@ export function StudentsPage() {
                     </div>
                     <ol className="grid gap-2">
                       {selectedStudent.events.slice(0, 5).map((event) => (
-                        <li className="rounded-md border border-border/55 bg-black/35 p-3" key={event.id}>
+                        <li className="rounded-md border border-border/55 bg-muted/45 p-3" key={event.id}>
                           <div className="flex items-center justify-between gap-3">
                             <span className="font-mono text-[11px] text-muted-foreground">
                               #{numberFormatter.format(event.blockNumber)}
@@ -493,7 +515,7 @@ export function StudentsPage() {
             <WalletCards className="h-4 w-4 text-primary" aria-hidden="true" />
             <p className="mt-2 text-xs font-semibold text-foreground">Wallet</p>
             <p className="mt-1 text-[11px] leading-5 text-muted-foreground">
-              La direccion simulada representa la recepcion del estudiante.
+              La direccion registrada representa la recepcion del estudiante.
             </p>
           </div>
           <div className="rounded-lg border border-border bg-card/95 p-3">
@@ -515,7 +537,7 @@ export function StudentsPage() {
         <section className="grid gap-3 md:grid-cols-3" data-student-panel>
           <div className="rounded-lg border border-border bg-card/95 p-3">
             <Mail className="h-4 w-4 text-primary" aria-hidden="true" />
-            <p className="mt-2 text-xs font-semibold text-foreground">Notificacion simulada</p>
+            <p className="mt-2 text-xs font-semibold text-foreground">Correo academico</p>
             <p className="mt-1 text-[11px] leading-5 text-muted-foreground">
               {selectedStudent?.student.email ?? "Sin estudiante seleccionado"}
             </p>

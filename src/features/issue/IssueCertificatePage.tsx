@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useGSAP } from "@gsap/react";
 import { gsap } from "gsap";
@@ -35,9 +35,11 @@ import { useReducedMotion } from "@/hooks/useReducedMotion";
 import { cn } from "@/lib/cn";
 import { formatDateTime, numberFormatter } from "@/lib/formatters";
 import { calculateSha256, normalizeHash, shortenHash } from "@/lib/hash";
-import { createMockTransaction } from "@/lib/mock-chain";
 import { motionPresets, setMotionCompleteState, shouldSkipMotion } from "@/lib/motion";
+import { useWalletPermissionOptions } from "@/hooks/useWalletPermissionOptions";
 import { canIssueCertificate } from "@/lib/permissions";
+import { canNavigateToRoute, canShowIssueActions } from "@/lib/ui-permissions";
+import { ROLE_LABELS } from "@/lib/roles";
 import { certificateIssueSchema } from "@/lib/validators";
 import { useAppStore } from "@/store/app-store";
 import type { Certificate, CertificateType, Issuer, Student } from "@/types/domain";
@@ -50,14 +52,6 @@ const certificateTypeLabels: Record<CertificateType, string> = {
   study_record: "Constancia de estudios",
 };
 
-const roleLabels = {
-  academic_admin: "Administrador academico",
-  authorized_issuer: "Universidad emisora",
-  auditor: "Auditor",
-  public_verifier: "Verificador publico",
-  student: "Estudiante",
-} as const;
-
 const issueSteps = [
   {
     detail: "Revisa campos, rol activo, wallet y emisor.",
@@ -65,9 +59,9 @@ const issueSteps = [
     title: "Validar datos",
   },
   {
-    detail: "Compone el PDF academico simulado con metadatos.",
+    detail: "Carga el PDF academico real que sera anclado.",
     icon: FileText,
-    title: "Preparar PDF simulado",
+    title: "Preparar PDF",
   },
   {
     detail: "Calcula la huella criptografica del documento.",
@@ -75,14 +69,14 @@ const issueSteps = [
     title: "Calcular hash SHA-256",
   },
   {
-    detail: "Firma la emision con wallet institucional mock.",
+    detail: "Solicita firma real desde MetaMask.",
     icon: KeyRound,
     title: "Firmar digitalmente la emision",
   },
   {
-    detail: "Invoca emitirCertificado() en el contrato simulado.",
+    detail: "Invoca emitirCertificado() en el contrato desplegado.",
     icon: Send,
-    title: "Enviar transaccion mock",
+    title: "Enviar transaccion Ethereum",
   },
   {
     detail: "Espera consenso y asignacion de bloque.",
@@ -142,7 +136,7 @@ function defaultIssueForm(count: number): IssueFormState {
     issueDate: todayInputValue(),
     issuerId: "",
     issuerRole: "",
-    observations: "Emision academica simulada para defensa de sistemas distribuidos.",
+    observations: "Emision academica para defensa de sistemas distribuidos.",
     pdfName: `${code.toLowerCase()}.pdf`,
     studentId: "",
     studentName: "",
@@ -198,7 +192,7 @@ function StudentOption({
     <button
       aria-label={`Seleccionar estudiante ${student.fullName}`}
       className={cn(
-        "grid w-full grid-cols-[auto_1fr] items-start gap-3 rounded-md border border-border/55 bg-black/38 p-3 text-left transition-all hover:border-foreground/20 hover:bg-black/55 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/20",
+        "grid w-full grid-cols-[auto_1fr] items-start gap-3 rounded-md border border-border/55 bg-muted/48 p-3 text-left transition-all hover:border-foreground/20 hover:bg-muted/65 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/20",
         selected && "border-primary/35 bg-primary/10 text-primary",
       )}
       onClick={() => onSelect(student)}
@@ -232,7 +226,7 @@ function IssuerOption({
     <button
       aria-label={`Usar emisor ${issuer.name}`}
       className={cn(
-        "grid w-full grid-cols-[auto_1fr_auto] items-start gap-3 rounded-md border border-border/55 bg-black/38 p-3 text-left transition-all hover:border-foreground/20 hover:bg-black/55 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/20 disabled:cursor-not-allowed disabled:opacity-55",
+        "grid w-full grid-cols-[auto_1fr_auto] items-start gap-3 rounded-md border border-border/55 bg-muted/48 p-3 text-left transition-all hover:border-foreground/20 hover:bg-muted/65 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/20 disabled:cursor-not-allowed disabled:opacity-55",
         selected && "border-success/35 bg-success/10",
       )}
       disabled={!issuer.active}
@@ -262,13 +256,17 @@ export function IssueCertificatePage() {
   const issuers = useAppStore((state) => state.issuers);
   const wallet = useAppStore((state) => state.wallet);
   const activeRole = useAppStore((state) => state.activeRole);
+  const activePersona = useAppStore((state) => state.activePersona);
   const selectedNetwork = useAppStore((state) => state.selectedNetwork);
+  const walletOptions = useWalletPermissionOptions();
+  const chainConnected = useAppStore((state) => state.chainConnected);
   const issueCertificate = useAppStore((state) => state.issueCertificate);
-  const connectWalletMock = useAppStore((state) => state.connectWalletMock);
+  const connectWallet = useAppStore((state) => state.connectWallet);
   const setRoute = useAppStore((state) => state.setRoute);
   const addToast = useAppStore((state) => state.addToast);
   const reducedMotion = useReducedMotion();
   const [form, setForm] = useState<IssueFormState>(() => defaultIssueForm(certificates.length));
+  const [pdfFile, setPdfFile] = useState<File | null>(null);
   const [activeStep, setActiveStep] = useState(-1);
   const [busy, setBusy] = useState(false);
   const [confirmedBlock, setConfirmedBlock] = useState<number | null>(null);
@@ -280,21 +278,43 @@ export function IssueCertificatePage() {
   const [resultOpen, setResultOpen] = useState(false);
   const [transactionHash, setTransactionHash] = useState("");
 
+  const visibleIssuers = useMemo(() => {
+    if (activeRole === "authorized_issuer" && activePersona.issuerId) {
+      return issuers.filter((issuer) => issuer.id === activePersona.issuerId);
+    }
+
+    return issuers;
+  }, [activePersona.issuerId, activeRole, issuers]);
+
   const selectedStudent = students.find((student) => student.id === form.studentId);
   const selectedIssuer = issuers.find((issuer) => issuer.id === form.issuerId);
-  const latestBlock = useMemo(
-    () =>
-      certificates.length > 0
-        ? Math.max(...certificates.map((certificate) => certificate.blockNumber))
-        : 0,
-    [certificates],
-  );
   const progress = activeStep < 0 ? 0 : Math.round(((activeStep + 1) / issueSteps.length) * 100);
   const contractReady = Boolean(
     wallet.connected &&
-      selectedIssuer?.active &&
-      (activeRole === "academic_admin" || activeRole === "authorized_issuer"),
+      chainConnected &&
+      wallet.isContractReady &&
+      wallet.isSupportedNetwork &&
+      canIssueCertificate(selectedIssuer, activeRole, walletOptions),
   );
+
+  useEffect(() => {
+    if (activeRole !== "authorized_issuer" || !activePersona.issuerId) {
+      return;
+    }
+
+    const issuer = issuers.find((item) => item.id === activePersona.issuerId);
+
+    if (!issuer) {
+      return;
+    }
+
+    setForm((current) => ({
+      ...current,
+      issuerId: issuer.id,
+      issuerRole: issuer.role,
+      university: issuer.institution,
+    }));
+  }, [activePersona.issuerId, activeRole, issuers]);
 
   useGSAP(
     () => {
@@ -438,8 +458,12 @@ export function IssueCertificatePage() {
       form.university,
     ];
 
-    if (!wallet.connected) {
-      nextErrors.push("Conecta una wallet institucional");
+    if (!wallet.connected || !chainConnected || !wallet.isContractReady) {
+      nextErrors.push("Conecta MetaMask con el contrato academico");
+    }
+
+    if (!pdfFile) {
+      nextErrors.push("Carga un archivo PDF real");
     }
 
     if (requiredValues.some((value) => !value.trim())) {
@@ -510,36 +534,20 @@ export function IssueCertificatePage() {
     setTransactionHash("");
 
     const motionDelay = shouldSkipMotion(reducedMotion) ? 0 : 105;
-    const payload = [
-      form.code,
-      form.pdfName,
-      form.studentName,
-      form.identityDocument,
-      form.career,
-      form.faculty,
-      form.university,
-      form.issueDate,
-      selectedIssuer.walletAddress,
-    ].join("|");
-
     for (let index = 0; index < issueSteps.length; index += 1) {
       setActiveStep(index);
 
       if (index === 2) {
-        const hash = normalizeHash(await calculateSha256(payload));
+        const hash = normalizeHash(await calculateSha256(pdfFile as File));
         setGeneratedHash(hash);
       }
 
       if (index === 3) {
-        setIssuerSignature(`issuer-signature-${selectedIssuer.id}-${form.code}`);
-      }
-
-      if (index === 4) {
-        setTransactionHash(createMockTransaction("0xcertichain"));
+        setIssuerSignature(`MetaMask:${shortenHash(wallet.address, 8)}`);
       }
 
       if (index === 5) {
-        setConfirmedBlock(latestBlock + 12);
+        setConfirmedBlock(null);
       }
 
       if (index === 6) {
@@ -552,12 +560,14 @@ export function IssueCertificatePage() {
           issueDate: form.issueDate,
           issuerId: selectedIssuer.id,
           observations: form.observations.trim(),
+          pdfFile: pdfFile ?? undefined,
           pdfName: form.pdfName.trim(),
           studentId: selectedStudent.id,
+          studentWallet: selectedStudent.walletAddress,
           university: form.university.trim(),
         });
 
-        if (!certificate || !canIssueCertificate(selectedIssuer, activeRole)) {
+        if (!certificate || !canIssueCertificate(selectedIssuer, activeRole, walletOptions)) {
           setErrors(["No se pudo registrar el certificado con los permisos actuales"]);
           setInvalidPulse((current) => current + 1);
           setBusy(false);
@@ -630,27 +640,29 @@ export function IssueCertificatePage() {
               Emitir certificado
             </h1>
             <p className="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground">
-              Simula PDF, SHA-256, firma digital, transaccion Ethereum y evento de ledger
-              para una universidad boliviana emisora.
+              Carga un PDF, calcula SHA-256, firma con MetaMask y ancla la evidencia en
+              Ethereum para una universidad boliviana emisora.
             </p>
           </div>
           <div className="grid gap-2 sm:grid-cols-2">
             <Button
               className="min-w-0"
               icon={<WalletCards className="h-4 w-4" aria-hidden="true" />}
-              onClick={connectWalletMock}
+              onClick={() => void connectWallet()}
               variant={wallet.connected ? "secondary" : "primary"}
             >
-              {wallet.connected ? "Wallet activa" : "Conectar wallet"}
+              {wallet.connected ? "Wallet activa" : "Conectar MetaMask"}
             </Button>
-            <Button
-              className="min-w-0"
-              icon={<ShieldCheck className="h-4 w-4" aria-hidden="true" />}
-              onClick={() => setRoute("issuers")}
-              variant="secondary"
-            >
-              Ver emisores
-            </Button>
+            {canNavigateToRoute(activeRole, "issuers") ? (
+              <Button
+                className="min-w-0"
+                icon={<ShieldCheck className="h-4 w-4" aria-hidden="true" />}
+                onClick={() => setRoute("issuers")}
+                variant="secondary"
+              >
+                Ver emisores
+              </Button>
+            ) : null}
           </div>
         </div>
       </section>
@@ -665,7 +677,7 @@ export function IssueCertificatePage() {
               </p>
             </div>
             <StatusBadge tone={activeRole === "student" ? "warning" : "online"}>
-              {roleLabels[activeRole]}
+              {ROLE_LABELS[activeRole]}
             </StatusBadge>
           </CardHeader>
           <CardContent>
@@ -744,7 +756,7 @@ export function IssueCertificatePage() {
                   ))}
                 </div>
 
-                <div className="grid gap-3 rounded-md border border-border/55 bg-black/35 p-3">
+                <div className="grid gap-3 rounded-md border border-border/55 bg-muted/45 p-3">
                   <div className="grid gap-3 md:grid-cols-2">
                     <FieldShell label="Nombre del estudiante">
                       <Input
@@ -790,7 +802,7 @@ export function IssueCertificatePage() {
               <div className="grid gap-3 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
                 <div className="grid gap-2">
                   <p className="text-xs font-semibold text-foreground">Emisores autorizados</p>
-                  {issuers.map((issuer) => (
+                  {visibleIssuers.map((issuer) => (
                     <IssuerOption
                       issuer={issuer}
                       key={issuer.id}
@@ -800,7 +812,7 @@ export function IssueCertificatePage() {
                   ))}
                 </div>
 
-                <div className="grid gap-3 rounded-md border border-border/55 bg-black/35 p-3">
+                <div className="grid gap-3 rounded-md border border-border/55 bg-muted/45 p-3">
                   <div className="grid gap-3 md:grid-cols-2">
                     <FieldShell label="Emisor autorizado">
                       <Input
@@ -819,12 +831,22 @@ export function IssueCertificatePage() {
                       />
                     </FieldShell>
                   </div>
-                  <FieldShell label="Archivo PDF simulado">
+                  <FieldShell label="Archivo PDF">
                     <Input
-                      onChange={(event) => updateForm("pdfName", event.target.value)}
-                      placeholder="cert-2026-0013.pdf"
-                      value={form.pdfName}
+                      accept="application/pdf"
+                      aria-label="Archivo PDF"
+                      onChange={(event) => {
+                        const file = event.target.files?.[0] ?? null;
+                        setPdfFile(file);
+                        if (file) {
+                          updateForm("pdfName", file.name);
+                        }
+                      }}
+                      type="file"
                     />
+                    <span className="font-normal text-muted-foreground">
+                      {pdfFile ? pdfFile.name : "Sin archivo seleccionado"}
+                    </span>
                   </FieldShell>
                   <FieldShell label="Observaciones">
                     <Textarea
@@ -835,28 +857,30 @@ export function IssueCertificatePage() {
                 </div>
               </div>
 
-              <div className="flex flex-col gap-3 rounded-md border border-border/55 bg-black/45 p-3 sm:flex-row sm:items-center sm:justify-between">
-                <div className="min-w-0">
-                  <p className="text-xs font-semibold text-foreground">Permiso de contrato</p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    emitirCertificado() requiere wallet conectada, rol emisor y emisor activo.
-                  </p>
+              {canShowIssueActions(activeRole) ? (
+                <div className="flex flex-col gap-3 rounded-md border border-border/55 bg-muted/55 p-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold text-foreground">Permiso de contrato</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      emitirCertificado() requiere MetaMask, contrato desplegado, rol emisor y PDF real.
+                    </p>
+                  </div>
+                  <Button
+                    aria-label="Emitir certificado"
+                    disabled={busy}
+                    icon={
+                      busy ? (
+                        <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                      ) : (
+                        <FileSignature className="h-4 w-4" aria-hidden="true" />
+                      )
+                    }
+                    type="submit"
+                  >
+                    {busy ? "Emitiendo" : "Emitir certificado"}
+                  </Button>
                 </div>
-                <Button
-                  aria-label="Emitir certificado"
-                  disabled={busy}
-                  icon={
-                    busy ? (
-                      <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-                    ) : (
-                      <FileSignature className="h-4 w-4" aria-hidden="true" />
-                    )
-                  }
-                  type="submit"
-                >
-                  {busy ? "Emitiendo" : "Emitir certificado"}
-                </Button>
-              </div>
+              ) : null}
             </form>
           </CardContent>
         </Card>
@@ -868,14 +892,14 @@ export function IssueCertificatePage() {
                 <p className="text-sm font-semibold text-foreground">
                   Panel lateral de previsualizacion
                 </p>
-                <p className="mt-1 text-xs text-muted-foreground">PDF academico simulado</p>
+                <p className="mt-1 text-xs text-muted-foreground">PDF academico real</p>
               </div>
               <StatusBadge tone={selectedStudent ? "online" : "neutral"}>
                 {selectedStudent ? "Datos listos" : "Sin estudiante"}
               </StatusBadge>
             </CardHeader>
             <CardContent className="grid gap-3">
-              <div className="rounded-md border border-border/55 bg-black/70 p-4 shadow-[inset_0_1px_0_hsl(var(--foreground)/0.035)]">
+              <div className="rounded-md border border-border/55 bg-muted/75 p-4 shadow-[inset_0_1px_0_hsl(var(--foreground)/0.035)]">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <p className="font-mono text-xs text-muted-foreground">{form.code}</p>
@@ -907,7 +931,7 @@ export function IssueCertificatePage() {
                   {generatedHash ? "SHA-256" : "Pendiente"}
                 </StatusBadge>
               </div>
-              <div className="rounded-md border border-border/55 bg-black/55 p-3 font-mono text-[11px] text-muted-foreground">
+              <div className="rounded-md border border-border/55 bg-muted/65 p-3 font-mono text-[11px] text-muted-foreground">
                 {generatedHash ? shortenHash(generatedHash, 18) : "Esperando calculo SHA-256"}
               </div>
             </CardContent>
@@ -924,10 +948,10 @@ export function IssueCertificatePage() {
                   {transactionHash ? "Enviada" : "Lista"}
                 </StatusBadge>
               </div>
-              <div className="rounded-md border border-border/55 bg-black/55 p-3 font-mono text-[11px] text-muted-foreground">
-                {transactionHash ? shortenHash(transactionHash, 14) : "tx mock pendiente"}
+              <div className="rounded-md border border-border/55 bg-muted/65 p-3 font-mono text-[11px] text-muted-foreground">
+                {transactionHash ? shortenHash(transactionHash, 14) : "tx pendiente"}
               </div>
-              <div className="rounded-md border border-border/45 bg-black/35 p-3" data-signature-panel>
+              <div className="rounded-md border border-border/45 bg-muted/45 p-3" data-signature-panel>
                 <p className="text-[11px] text-muted-foreground">Firma de emision</p>
                 <p className="mt-1 truncate font-mono text-[11px] text-foreground">
                   {issuerSignature || "firma digital pendiente"}
@@ -947,7 +971,7 @@ export function IssueCertificatePage() {
                   {contractReady ? "Operativo" : "Bloqueado"}
                 </StatusBadge>
               </div>
-              <div className="grid gap-2 rounded-md border border-border/55 bg-black/55 p-3 text-xs">
+              <div className="grid gap-2 rounded-md border border-border/55 bg-muted/65 p-3 text-xs">
                 <DetailRow label="Metodo" value="emitirCertificado()" />
                 <DetailRow label="Bloque" value={confirmedBlock ? numberFormatter.format(confirmedBlock) : "Pendiente"} />
                 <DetailRow label="Red" value={selectedNetwork} />
@@ -968,7 +992,7 @@ export function IssueCertificatePage() {
       <Card data-issue-panel>
         <CardHeader className="flex flex-row items-center justify-between gap-3">
           <div>
-            <p className="text-sm font-semibold text-foreground">Secuencia Web3 simulada</p>
+            <p className="text-sm font-semibold text-foreground">Secuencia Web3</p>
             <p className="mt-1 text-xs text-muted-foreground">
               Cada etapa representa una accion observable durante la defensa.
             </p>
@@ -986,7 +1010,7 @@ export function IssueCertificatePage() {
               return (
                 <li
                   className={cn(
-                    "grid min-h-[8.5rem] gap-3 rounded-md border border-border/55 bg-black/38 p-3 motion-transform",
+                    "grid min-h-[8.5rem] gap-3 rounded-md border border-border/55 bg-muted/48 p-3 motion-transform",
                     state === "active" && "border-primary/35 bg-primary/10",
                     state === "complete" && "border-success/25 bg-success/10",
                   )}
@@ -1019,13 +1043,13 @@ export function IssueCertificatePage() {
       </Card>
 
         <Modal
-        description="El hash SHA-256, la firma institucional y la transaccion mock quedaron asociados al estudiante seleccionado."
+        description="El hash SHA-256, la firma institucional y la transaccion Ethereum quedaron asociados al estudiante seleccionado."
         onOpenChange={setResultOpen}
         open={resultOpen}
         title="Certificado emitido"
       >
         <div className="grid gap-4">
-          <div className="grid gap-2 rounded-md border border-border/55 bg-black/55 p-3 text-xs">
+          <div className="grid gap-2 rounded-md border border-border/55 bg-muted/65 p-3 text-xs">
             <DetailRow label="Codigo" value={issuedCertificate?.code ?? form.code} />
             <DetailRow label="Estudiante" value={issuedCertificate?.studentName ?? form.studentName} />
             <DetailRow label="Estado" value={issuedCertificate ? "Pendiente de recepcion" : "Confirmado"} />
@@ -1045,7 +1069,7 @@ export function IssueCertificatePage() {
             />
           </div>
 
-          <div className="grid gap-3 rounded-md border border-border/55 bg-black/55 p-3">
+          <div className="grid gap-3 rounded-md border border-border/55 bg-muted/65 p-3">
             <div>
               <p className="text-xs font-semibold text-foreground">Hash SHA-256</p>
               <p className="mt-1 break-all font-mono text-[11px] leading-5 text-muted-foreground">

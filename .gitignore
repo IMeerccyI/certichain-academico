@@ -9,6 +9,14 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
+vite-dev*.log
+blockchain/hardhat-node*.log
+blockchain/cache/
+
+.claude/
+agent-tools/
+terminals/
+lo que hizo claude xd.txt
 
 .DS_Store
 Thumbs.db

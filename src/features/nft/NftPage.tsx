@@ -23,10 +23,12 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Modal } from "@/components/ui/modal";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
+import { canControlNftTransfer, canShowMintNft } from "@/lib/ui-permissions";
 import { cn } from "@/lib/cn";
 import { formatDateTime, numberFormatter } from "@/lib/formatters";
 import { shortenHash } from "@/lib/hash";
 import { setMotionCompleteState, shouldSkipMotion } from "@/lib/motion";
+import { getDeploymentByNetwork, isDeploymentReady } from "@/lib/web3/deployments";
 import { useAppStore } from "@/store/app-store";
 import type { Certificate, NftAcademicToken } from "@/types/domain";
 
@@ -38,8 +40,6 @@ type TransferEvent = {
   meta?: string;
   title: string;
 };
-
-const CONTRACT_ADDRESS = "0x7777777777777777777777777777777777777777";
 
 const certificateTypeLabels: Record<Certificate["type"], string> = {
   academic_diploma: "Diploma academico",
@@ -66,7 +66,11 @@ function tokenByCertificate(tokens: NftAcademicToken[], certificate: Certificate
   );
 }
 
-function buildMetadata(certificate: Certificate | undefined, token: NftAcademicToken | undefined) {
+function buildMetadata(
+  certificate: Certificate | undefined,
+  token: NftAcademicToken | undefined,
+  contractAddress: string,
+) {
   if (!certificate) {
     return {};
   }
@@ -81,7 +85,7 @@ function buildMetadata(certificate: Certificate | undefined, token: NftAcademicT
     certificado: certificate.code,
     tipo: certificateTypeLabels[certificate.type],
     estadoMint: token ? "minteado" : "pendiente",
-    contrato: token?.contractAddress ?? CONTRACT_ADDRESS,
+    contrato: token?.contractAddress ?? contractAddress,
     metadataUri: token?.metadataUri ?? `ipfs://certichain-academico/${certificate.id}.json`,
     uso: "credencial academica ERC-721 no comercial",
   };
@@ -128,8 +132,10 @@ async function copyTextToClipboard(value: string) {
     const permission = await window.navigator.permissions?.query({
       name: "clipboard-write" as PermissionName,
     });
+    const canWrite =
+      !permission || permission.state === "granted" || permission.state === "prompt";
 
-    if (permission?.state === "granted" && window.navigator.clipboard?.writeText) {
+    if (canWrite && window.navigator.clipboard?.writeText) {
       await window.navigator.clipboard.writeText(value);
       return true;
     }
@@ -150,6 +156,7 @@ export function NftPage() {
   const blockchainEvents = useAppStore((state) => state.blockchainEvents);
   const nftAcademicTokens = useAppStore((state) => state.nftAcademicTokens);
   const mintAcademicNft = useAppStore((state) => state.mintAcademicNft);
+  const selectedNetwork = useAppStore((state) => state.selectedNetwork);
   const [selectedCertificateId, setSelectedCertificateId] = useState(
     () =>
       certificates.find((certificate) => certificate.nftTokenId)?.id ??
@@ -163,8 +170,10 @@ export function NftPage() {
   const [mintedToken, setMintedToken] = useState<NftAcademicToken | undefined>();
   const [transferEvents, setTransferEvents] = useState<TransferEvent[]>([]);
   const [transferStatus, setTransferStatus] = useState(
-    "Regla de transferencia lista para simular.",
+    "Regla de transferencia lista para evaluar.",
   );
+  const deployment = getDeploymentByNetwork(selectedNetwork);
+  const deploymentAddress = isDeploymentReady(deployment) ? deployment.address : "Contrato pendiente";
 
   const eligibleCertificates = useMemo(
     () => certificates.filter((certificate) => certificate.status === "valid"),
@@ -179,8 +188,8 @@ export function NftPage() {
   const ownerStudent =
     students.find((student) => student.id === selectedToken?.ownerStudentId) ?? selectedStudent;
   const metadata = useMemo(
-    () => buildMetadata(selectedCertificate, selectedToken),
-    [selectedCertificate, selectedToken],
+    () => buildMetadata(selectedCertificate, selectedToken, deploymentAddress),
+    [deploymentAddress, selectedCertificate, selectedToken],
   );
   const metadataJson = useMemo(() => JSON.stringify(metadata, null, 2), [metadata]);
   const mintedCount = nftAcademicTokens.length;
@@ -224,7 +233,7 @@ export function NftPage() {
           title: "NFT minteado",
         }
       : {
-          description: "El certificado todavia no tiene token ERC-721 mock asociado.",
+          description: "El certificado todavia no tiene token ERC-721 asociado.",
           id: "pending-mint",
           meta: "pendiente",
           title: "Mint pendiente",
@@ -243,10 +252,10 @@ export function NftPage() {
     ...visibleTransferEvents,
   ];
   const canMint =
+    canShowMintNft(activeRole) &&
     Boolean(selectedCertificate) &&
     selectedCertificate?.status === "valid" &&
-    !selectedToken &&
-    ["academic_admin", "authorized_issuer"].includes(activeRole);
+    !selectedToken;
 
   useGSAP(
     () => {
@@ -330,7 +339,7 @@ export function NftPage() {
     setSelectedCertificateId(certificateId);
     setCopyStatus("Metadata lista para copiar.");
     setMetadataHighlighted(false);
-    setTransferStatus("Regla de transferencia lista para simular.");
+    setTransferStatus("Regla de transferencia lista para evaluar.");
   };
 
   const handleViewMetadata = () => {
@@ -342,14 +351,14 @@ export function NftPage() {
     const copied = await copyTextToClipboard(metadataJson);
     setCopyStatus(
       copied
-        ? "Metadata copiada al portapapeles simulado."
-        : "Metadata copiada en la simulacion; el JSON queda visible para seleccion manual.",
+        ? "Metadata copiada al portapapeles."
+        : "Metadata visible para seleccion manual.",
     );
     addToast({
       title: "Metadata copiada",
       description: selectedCertificate
         ? `${selectedCertificate.code} listo para inspeccion externa.`
-        : "Metadata mock lista.",
+        : "Metadata lista.",
       intent: copied ? "info" : "warning",
     });
   };
@@ -367,7 +376,7 @@ export function NftPage() {
 
     setMintedToken(token);
     setMintModalOpen(true);
-    setTransferStatus("NFT academico minteado y vinculado al certificado.");
+    setTransferStatus("El contrato mintea el NFT durante la emision del certificado.");
     setMetadataHighlighted(true);
   };
 
@@ -438,7 +447,7 @@ export function NftPage() {
           <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(19rem,0.34fr)]">
             <div className="min-w-0">
               <div className="mb-3 flex flex-wrap gap-2">
-                <StatusBadge tone="syncing">ERC-721 mock</StatusBadge>
+                <StatusBadge tone="syncing">ERC-721</StatusBadge>
                 <StatusBadge tone="online">Metadata verificable</StatusBadge>
                 <StatusBadge tone="neutral">{mintedCount} tokens</StatusBadge>
               </div>
@@ -448,11 +457,11 @@ export function NftPage() {
               <p className="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground">
                 Extension opcional para representar cada certificado como una credencial academica
                 tokenizada, con Token ID unico, metadata JSON, propietario estudiantil, hash del
-                documento e historial permanente replicado en el ledger simulado.
+                documento e historial permanente replicado en el ledger.
               </p>
             </div>
 
-            <div className="rounded-md border border-border/55 bg-black/45 p-3">
+            <div className="rounded-md border border-border/55 bg-muted/55 p-3">
               <div className="flex items-center gap-2 text-muted-foreground">
                 <ShieldCheck className="h-4 w-4" aria-hidden="true" />
                 <p className="text-xs font-semibold uppercase">Regla de uso</p>
@@ -489,7 +498,7 @@ export function NftPage() {
                       "grid rounded-md border p-3 text-left transition-all duration-200 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/25",
                       selected
                         ? "border-foreground/25 bg-foreground text-background shadow-[inset_0_1px_0_hsl(var(--background)/0.18),0_18px_42px_-30px_hsl(var(--foreground)/0.7)]"
-                        : "border-border/60 bg-black/42 text-foreground hover:border-foreground/18 hover:bg-secondary",
+                        : "border-border/60 bg-muted/52 text-foreground hover:border-foreground/18 hover:bg-secondary",
                     )}
                     key={certificate.id}
                     onClick={() => handleSelectCertificate(certificate.id)}
@@ -521,7 +530,7 @@ export function NftPage() {
                         "mt-3 flex items-center justify-between gap-3 rounded-md border px-2.5 py-2 text-[11px]",
                         selected
                           ? "border-background/15 bg-background/12 text-background/72"
-                          : "border-border/50 bg-black/35 text-muted-foreground",
+                          : "border-border/50 bg-muted/45 text-muted-foreground",
                       )}
                     >
                       <span>{certificateTypeLabels[certificate.type]}</span>
@@ -546,7 +555,7 @@ export function NftPage() {
               </CardHeader>
               <CardContent>
                 <article
-                  className="motion-transform relative overflow-hidden rounded-lg border border-border bg-black/55 p-4 shadow-[inset_0_1px_0_hsl(var(--foreground)/0.035),0_20px_70px_-42px_hsl(var(--shadow-ledger)/1)]"
+                  className="motion-transform relative overflow-hidden rounded-lg border border-border bg-muted/65 p-4 shadow-[inset_0_1px_0_hsl(var(--foreground)/0.035),0_20px_70px_-42px_hsl(var(--shadow-ledger)/1)]"
                   data-nft-token-card
                   data-testid="nft-token-card"
                 >
@@ -557,7 +566,7 @@ export function NftPage() {
                         <span className="rounded-md border border-primary/25 bg-primary/10 px-2 py-1 font-mono text-[11px] font-semibold text-primary">
                           ERC-721
                         </span>
-                        <span className="rounded-md border border-border/55 bg-black/45 px-2 py-1 font-mono text-[11px] text-muted-foreground">
+                        <span className="rounded-md border border-border/55 bg-muted/55 px-2 py-1 font-mono text-[11px] text-muted-foreground">
                           CertiChain Academic Token
                         </span>
                       </div>
@@ -583,14 +592,14 @@ export function NftPage() {
                         <div className="flex items-center justify-between gap-3">
                           <span className="text-xs text-muted-foreground">Contrato</span>
                           <span className="max-w-[12rem] truncate text-right font-mono text-xs text-foreground">
-                            {selectedToken?.contractAddress ?? CONTRACT_ADDRESS}
+                            {selectedToken?.contractAddress ?? deploymentAddress}
                           </span>
                         </div>
                       </div>
                     </div>
 
                     <div className="grid rounded-md border border-border/55 bg-card/60 p-3">
-                      <div className="grid place-items-center rounded-md border border-border/55 bg-black/45 p-4">
+                      <div className="grid place-items-center rounded-md border border-border/55 bg-muted/55 p-4">
                         <Fingerprint className="h-12 w-12 text-primary" aria-hidden="true" />
                         <p className="mt-3 text-center text-xs font-semibold text-foreground">
                           Credencial academica ERC-721
@@ -612,13 +621,15 @@ export function NftPage() {
                   </div>
 
                   <div className="mt-4 flex flex-wrap gap-2">
-                    <Button
-                      disabled={!canMint}
-                      icon={<Sparkles className="h-4 w-4" aria-hidden="true" />}
-                      onClick={handleMint}
-                    >
-                      Simular mint de NFT
-                    </Button>
+                    {canShowMintNft(activeRole) ? (
+                      <Button
+                        disabled={!canMint}
+                        icon={<Sparkles className="h-4 w-4" aria-hidden="true" />}
+                        onClick={handleMint}
+                      >
+                        Mint desde contrato
+                      </Button>
+                    ) : null}
                     <Button
                       icon={<Braces className="h-4 w-4" aria-hidden="true" />}
                       onClick={handleViewMetadata}
@@ -647,7 +658,7 @@ export function NftPage() {
                 <StatusBadge tone="online">{selectedCertificate?.code ?? "Sin codigo"}</StatusBadge>
               </CardHeader>
               <CardContent className="grid gap-3">
-                <div className="grid gap-3 rounded-md border border-border/55 bg-black/45 p-3 md:grid-cols-2">
+                <div className="grid gap-3 rounded-md border border-border/55 bg-muted/55 p-3 md:grid-cols-2">
                   <div>
                     <p className="text-xs text-muted-foreground">Documento</p>
                     <p className="mt-1 text-sm font-semibold text-foreground">
@@ -673,7 +684,7 @@ export function NftPage() {
                     </p>
                   </div>
                 </div>
-                <div className="rounded-md border border-border/55 bg-black/45 p-3">
+                <div className="rounded-md border border-border/55 bg-muted/55 p-3">
                   <p className="mb-2 text-xs font-semibold text-muted-foreground">
                     Hash del documento
                   </p>
@@ -696,7 +707,7 @@ export function NftPage() {
             <CardContent className="grid gap-3">
               <pre
                 className={cn(
-                  "max-h-[27rem] overflow-auto rounded-md border bg-black/55 p-3 font-mono text-[11px] leading-5 text-foreground shadow-[inset_0_1px_0_hsl(var(--foreground)/0.025)]",
+                  "max-h-[27rem] overflow-auto rounded-md border bg-muted/65 p-3 font-mono text-[11px] leading-5 text-foreground shadow-[inset_0_1px_0_hsl(var(--foreground)/0.025)]",
                   metadataHighlighted ? "border-primary/35" : "border-border/55",
                 )}
                 data-testid="nft-metadata-json"
@@ -704,7 +715,7 @@ export function NftPage() {
                 {metadataJson}
               </pre>
               <div
-                className="rounded-md border border-border/55 bg-black/35 p-3 text-xs leading-5 text-muted-foreground"
+                className="rounded-md border border-border/55 bg-muted/45 p-3 text-xs leading-5 text-muted-foreground"
                 data-testid="nft-copy-status"
               >
                 {copyStatus}
@@ -743,7 +754,7 @@ export function NftPage() {
               </StatusBadge>
             </CardHeader>
             <CardContent className="grid gap-3">
-              <div className="grid gap-2 rounded-md border border-border/55 bg-black/45 p-3 text-xs">
+              <div className="grid gap-2 rounded-md border border-border/55 bg-muted/55 p-3 text-xs">
                 <div className="flex items-center justify-between gap-3">
                   <span className="text-muted-foreground">Regla base</span>
                   <span className="text-right font-semibold text-foreground">No comercial</span>
@@ -769,20 +780,22 @@ export function NftPage() {
                   onClick={handleBlockedTransfer}
                   variant="secondary"
                 >
-                  Simular transferencia bloqueada
+                  Transferencia bloqueada
                 </Button>
-                <Button
-                  disabled={!selectedToken}
-                  icon={<LockKeyhole className="h-4 w-4" aria-hidden="true" />}
-                  onClick={handleAllowedTransfer}
-                  variant="secondary"
-                >
-                  Simular transferencia permitida
-                </Button>
+                {canControlNftTransfer(activeRole) ? (
+                  <Button
+                    disabled={!selectedToken}
+                    icon={<LockKeyhole className="h-4 w-4" aria-hidden="true" />}
+                    onClick={handleAllowedTransfer}
+                    variant="secondary"
+                  >
+                    Transferencia permitida
+                  </Button>
+                ) : null}
               </div>
 
               <div
-                className="rounded-md border border-border/55 bg-black/35 p-3 text-xs leading-5 text-muted-foreground"
+                className="rounded-md border border-border/55 bg-muted/45 p-3 text-xs leading-5 text-muted-foreground"
                 data-testid="nft-transfer-status"
               >
                 {transferStatus}
@@ -793,7 +806,7 @@ export function NftPage() {
       </MotionPage>
 
       <Modal
-        description="El Token ID quedo vinculado al certificado y la metadata se puede inspeccionar sin conexion real a Ethereum."
+        description="El Token ID quedo vinculado al certificado y la metadata se puede inspeccionar desde el registro ERC-721."
         onOpenChange={setMintModalOpen}
         open={mintModalOpen}
         title="Mint NFT academico exitoso"
@@ -815,7 +828,7 @@ export function NftPage() {
               </p>
             </div>
           </div>
-          <div className="rounded-md border border-success/25 bg-black/25 p-3 text-xs leading-5 text-success/85">
+          <div className="rounded-md border border-success/25 bg-muted/35 p-3 text-xs leading-5 text-success/85">
             La operacion crea trazabilidad para defensa academica. No representa venta,
             inversion ni activo economico real.
           </div>

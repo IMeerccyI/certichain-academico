@@ -13,7 +13,7 @@ export function EmptyState({ action, className, description, icon, title }: Empt
   return (
     <div
       className={cn(
-        "grid place-items-center rounded-lg border border-dashed border-border bg-black/30 p-8 text-center",
+        "grid place-items-center rounded-lg border border-dashed border-border bg-muted/40 p-8 text-center",
         className,
       )}
     >

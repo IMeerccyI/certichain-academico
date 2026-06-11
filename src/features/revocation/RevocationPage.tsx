@@ -31,11 +31,21 @@ import { cn } from "@/lib/cn";
 import { formatDateTime, numberFormatter } from "@/lib/formatters";
 import { shortenHash } from "@/lib/hash";
 import { setMotionCompleteState, shouldSkipMotion } from "@/lib/motion";
+import { useWalletPermissionOptions } from "@/hooks/useWalletPermissionOptions";
 import { canRevokeCertificate } from "@/lib/permissions";
+import { canShowRevokeActions } from "@/lib/ui-permissions";
 import { useAppStore } from "@/store/app-store";
 import type { BlockchainEvent, Certificate, Issuer, RevocationRecord } from "@/types/domain";
 
-type ValidationState = "idle" | "missing_reason" | "missing_confirmation" | "permission" | "revoked" | "issuer_mismatch" | "not_found";
+type ValidationState =
+  | "contract"
+  | "idle"
+  | "missing_reason"
+  | "missing_confirmation"
+  | "permission"
+  | "revoked"
+  | "issuer_mismatch"
+  | "not_found";
 
 type RevocationResult = {
   certificate: Certificate;
@@ -70,8 +80,12 @@ const statusTone: Record<
 
 const validationCopy: Record<ValidationState, { description: string; title: string }> = {
   idle: {
-    description: "Completa el motivo, confirma la accion y firma la transaccion mock.",
+    description: "Completa el motivo, confirma la accion y firma la transaccion con MetaMask.",
     title: "Validacion pendiente",
+  },
+  contract: {
+    description: "Conecta MetaMask a una red con CertificadoAcademico desplegado para revocar.",
+    title: "Contrato no conectado",
   },
   issuer_mismatch: {
     description: "El emisor responsable debe coincidir con el emisor que anclo el certificado.",
@@ -86,7 +100,7 @@ const validationCopy: Record<ValidationState, { description: string; title: stri
     title: "Motivo requerido",
   },
   not_found: {
-    description: "No existe un certificado local con ese codigo en los datos mock.",
+    description: "No existe un certificado asociado a ese codigo.",
     title: "Certificado no encontrado",
   },
   permission: {
@@ -124,13 +138,13 @@ function TimelineStep({
   return (
     <li
       className={cn(
-        "flex items-center gap-3 rounded-md border border-border/55 bg-black/35 p-3 text-xs text-muted-foreground",
+        "flex items-center gap-3 rounded-md border border-border/55 bg-muted/45 p-3 text-xs text-muted-foreground",
         active && "border-primary/35 bg-primary/10 text-foreground",
         done && "border-success/25 bg-success/10 text-success",
       )}
       data-revocation-step
     >
-      <span className="grid h-8 w-8 shrink-0 place-items-center rounded-md border border-current/20 bg-black/30">
+      <span className="grid h-8 w-8 shrink-0 place-items-center rounded-md border border-current/20 bg-muted/40">
         {icon}
       </span>
       <span className="font-semibold">{label}</span>
@@ -141,8 +155,8 @@ function TimelineStep({
 function ResultPanel({ result }: { result: RevocationResult | null }) {
   if (!result) {
     return (
-      <div className="rounded-md border border-border/55 bg-black/40 p-4 text-sm text-muted-foreground">
-        El resultado de transaccion mock aparecera despues de firmar y confirmar la revocacion.
+      <div className="rounded-md border border-border/55 bg-muted/50 p-4 text-sm text-muted-foreground">
+        El resultado de transaccion aparecera despues de firmar y confirmar la revocacion.
       </div>
     );
   }
@@ -151,14 +165,14 @@ function ResultPanel({ result }: { result: RevocationResult | null }) {
     <div className="grid gap-3 rounded-md border border-success/25 bg-success/10 p-4" data-revocation-result>
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-sm font-semibold text-success">Transaccion mock confirmada</p>
+          <p className="text-sm font-semibold text-success">Transaccion confirmada</p>
           <p className="mt-1 text-xs leading-5 text-muted-foreground">
             El certificado cambio a revocado, el historial se conserva y se agrego un evento al ledger.
           </p>
         </div>
         <BadgeCheck className="h-5 w-5 text-success" aria-hidden="true" />
       </div>
-      <div className="grid gap-1 rounded-md border border-border/45 bg-black/35 p-3">
+      <div className="grid gap-1 rounded-md border border-border/45 bg-muted/45 p-3">
         <FieldLine label="Certificado" value={result.certificate.code} />
         <FieldLine label="Estado" value="Revocado" />
         <FieldLine
@@ -183,6 +197,9 @@ export function RevocationPage() {
   const blockchainEvents = useAppStore((state) => state.blockchainEvents);
   const revocationRecords = useAppStore((state) => state.revocationRecords);
   const activeRole = useAppStore((state) => state.activeRole);
+  const wallet = useAppStore((state) => state.wallet);
+  const walletOptions = useWalletPermissionOptions();
+  const chainConnected = useAppStore((state) => state.chainConnected);
   const selectedNetwork = useAppStore((state) => state.selectedNetwork);
   const revokeCertificate = useAppStore((state) => state.revokeCertificate);
   const addToast = useAppStore((state) => state.addToast);
@@ -217,15 +234,19 @@ export function RevocationPage() {
   const revocationRecord = selectedCertificate
     ? revocationRecords.find((record) => record.certificateId === selectedCertificate.id)
     : undefined;
-  const roleCanRevoke = activeRole === "academic_admin" || activeRole === "authorized_issuer";
+  const roleCanRevoke = canShowRevokeActions(activeRole);
+  const contractReady = Boolean(
+    chainConnected && wallet.connected && wallet.isContractReady && wallet.isSupportedNetwork,
+  );
   const storeCanRevoke = selectedCertificate
-    ? canRevokeCertificate(originalIssuer, selectedCertificate, activeRole)
+    ? canRevokeCertificate(originalIssuer, selectedCertificate, activeRole, walletOptions)
     : false;
   const issuerMatches = Boolean(selectedCertificate && issuerId === selectedCertificate.issuerId);
   const readyToOpenModal =
     Boolean(selectedCertificate) &&
     roleCanRevoke &&
     storeCanRevoke &&
+    contractReady &&
     issuerMatches &&
     selectedCertificate?.status !== "revoked" &&
     reason.trim().length > 0 &&
@@ -375,6 +396,11 @@ export function RevocationPage() {
       return false;
     }
 
+    if (!contractReady) {
+      raiseValidation("contract");
+      return false;
+    }
+
     setValidation("idle");
     return true;
   };
@@ -387,13 +413,13 @@ export function RevocationPage() {
     setModalOpen(true);
   };
 
-  const executeRevocation = () => {
+  const executeRevocation = async () => {
     if (!selectedCertificate || !readyToOpenModal) {
       setModalOpen(false);
       return;
     }
 
-    const updated = revokeCertificate(selectedCertificate.id, reason.trim());
+    const updated = await revokeCertificate(selectedCertificate.id, reason.trim());
 
     if (!updated) {
       raiseValidation("permission");
@@ -431,7 +457,9 @@ export function RevocationPage() {
                 <StatusBadge tone={roleCanRevoke ? "online" : "warning"}>
                   Rol {roleCanRevoke ? "con permiso" : "sin permiso"}
                 </StatusBadge>
-                <StatusBadge tone="syncing">Smart contract mock</StatusBadge>
+                <StatusBadge tone={contractReady ? "online" : "warning"}>
+                  Smart contract {contractReady ? "conectado" : "pendiente"}
+                </StatusBadge>
                 <StatusBadge tone="neutral">Historial inmutable</StatusBadge>
               </div>
               <h1 className="text-2xl font-semibold tracking-tight text-foreground">
@@ -442,7 +470,7 @@ export function RevocationPage() {
                 marcado como revocado, se conserva el historial y se registra un evento blockchain.
               </p>
             </div>
-            <div className="grid min-w-48 gap-1 rounded-md border border-border/55 bg-black/45 p-3">
+            <div className="grid min-w-48 gap-1 rounded-md border border-border/55 bg-muted/55 p-3">
               <p className="text-xs font-semibold text-muted-foreground">Estado de flujo</p>
               <p className="font-mono text-sm font-semibold text-foreground">
                 {selectedCertificate?.code ?? "Sin certificado"}
@@ -505,7 +533,7 @@ export function RevocationPage() {
                 </div>
               ) : null}
 
-              <div className="rounded-md border border-border/55 bg-black/38 p-3">
+              <div className="rounded-md border border-border/55 bg-muted/48 p-3">
                 <p className="text-[11px] font-semibold uppercase text-muted-foreground">
                   Panel de datos del certificado
                 </p>
@@ -540,72 +568,79 @@ export function RevocationPage() {
                 )}
               </div>
 
-              <div className="grid gap-3 rounded-md border border-border/55 bg-black/35 p-3">
-                <div ref={reasonRef} data-revocation-reason-block>
+              {roleCanRevoke ? (
+                <div className="grid gap-3 rounded-md border border-border/55 bg-muted/45 p-3">
+                  <div ref={reasonRef} data-revocation-reason-block>
+                    <label className="grid gap-1.5 text-[11px] font-semibold text-muted-foreground">
+                      Motivo de revocacion
+                      <Textarea
+                        aria-label="Motivo de revocacion"
+                        className="min-h-28"
+                        onChange={(event) => {
+                          setReason(event.target.value);
+                          if (validation === "missing_reason" && event.target.value.trim()) {
+                            setValidation("idle");
+                          }
+                        }}
+                        placeholder="Describe la correccion administrativa, error de registro o causa formal."
+                        value={reason}
+                      />
+                    </label>
+                  </div>
+
                   <label className="grid gap-1.5 text-[11px] font-semibold text-muted-foreground">
-                    Motivo de revocacion
-                    <Textarea
-                      aria-label="Motivo de revocacion"
-                      className="min-h-28"
+                    Emisor responsable
+                    <select
+                      aria-label="Emisor responsable"
+                      className="h-8 w-full rounded-md border border-border/80 bg-muted/45 px-3 text-xs font-semibold text-foreground outline-none shadow-[inset_0_1px_0_hsl(var(--foreground)/0.025)] transition-colors focus:border-primary/70 focus:ring-4 focus:ring-primary/15"
+                      onChange={(event) => setIssuerId(event.target.value)}
+                      value={issuerId}
+                    >
+                      {issuers.map((issuer) => (
+                        <option className="bg-card text-foreground" key={issuer.id} value={issuer.id}>
+                          {issuer.name} · {issuer.active ? "activo" : "inactivo"}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label className="flex items-start gap-3 rounded-md border border-border/55 bg-muted/45 p-3 text-xs text-muted-foreground">
+                    <input
+                      aria-label="Confirmo la revocacion"
+                      checked={confirmed}
+                      className="mt-0.5 h-4 w-4 rounded border-border bg-muted/60 accent-[hsl(var(--warning))]"
                       onChange={(event) => {
-                        setReason(event.target.value);
-                        if (validation === "missing_reason" && event.target.value.trim()) {
+                        setConfirmed(event.target.checked);
+                        if (validation === "missing_confirmation" && event.target.checked) {
                           setValidation("idle");
                         }
                       }}
-                      placeholder="Describe la correccion administrativa, error de registro o causa formal."
-                      value={reason}
+                      type="checkbox"
                     />
+                    <span>
+                      <span className="block font-semibold text-foreground">
+                        Confirmo la revocacion y entiendo que no elimina el historial.
+                      </span>
+                      <span className="mt-1 block leading-5">
+                        La accion queda trazada como evento distribuido y puede ser auditada despues.
+                      </span>
+                    </span>
                   </label>
-                </div>
 
-                <label className="grid gap-1.5 text-[11px] font-semibold text-muted-foreground">
-                  Emisor responsable
-                  <select
-                    aria-label="Emisor responsable"
-                    className="h-8 w-full rounded-md border border-border/80 bg-black/35 px-3 text-xs font-semibold text-foreground outline-none shadow-[inset_0_1px_0_hsl(var(--foreground)/0.025)] transition-colors focus:border-primary/70 focus:ring-4 focus:ring-primary/15"
-                    onChange={(event) => setIssuerId(event.target.value)}
-                    value={issuerId}
+                  <Button
+                    icon={<ShieldAlert className="h-4 w-4" aria-hidden="true" />}
+                    onClick={openWarningModal}
+                    variant="danger"
                   >
-                    {issuers.map((issuer) => (
-                      <option className="bg-card text-foreground" key={issuer.id} value={issuer.id}>
-                        {issuer.name} · {issuer.active ? "activo" : "inactivo"}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                <label className="flex items-start gap-3 rounded-md border border-border/55 bg-black/35 p-3 text-xs text-muted-foreground">
-                  <input
-                    aria-label="Confirmo la revocacion"
-                    checked={confirmed}
-                    className="mt-0.5 h-4 w-4 rounded border-border bg-black/50 accent-[hsl(var(--warning))]"
-                    onChange={(event) => {
-                      setConfirmed(event.target.checked);
-                      if (validation === "missing_confirmation" && event.target.checked) {
-                        setValidation("idle");
-                      }
-                    }}
-                    type="checkbox"
-                  />
-                  <span>
-                    <span className="block font-semibold text-foreground">
-                      Confirmo la revocacion y entiendo que no elimina el historial.
-                    </span>
-                    <span className="mt-1 block leading-5">
-                      La accion queda trazada como evento distribuido y puede ser auditada despues.
-                    </span>
-                  </span>
-                </label>
-
-                <Button
-                  icon={<ShieldAlert className="h-4 w-4" aria-hidden="true" />}
-                  onClick={openWarningModal}
-                  variant="danger"
-                >
-                  Revocar
-                </Button>
-              </div>
+                    Revocar
+                  </Button>
+                </div>
+              ) : (
+                <p className="rounded-md border border-border/55 bg-muted/45 p-3 text-xs leading-5 text-muted-foreground">
+                  Tu rol solo puede consultar certificados revocados. La accion de revocacion no esta
+                  disponible en esta sesion.
+                </p>
+              )}
             </CardContent>
           </Card>
 
@@ -613,9 +648,9 @@ export function RevocationPage() {
             <Card data-revocation-panel>
               <CardHeader className="flex flex-row items-center justify-between gap-3">
                 <div>
-                  <p className="text-sm font-semibold text-foreground">Resultado de transaccion mock</p>
+                  <p className="text-sm font-semibold text-foreground">Resultado de transaccion</p>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    Firma, envio y bloque confirmado en red simulada.
+                    Firma, envio y bloque confirmado en la red seleccionada.
                   </p>
                 </div>
                 <StatusBadge tone={result ? "online" : "neutral"}>
@@ -657,7 +692,7 @@ export function RevocationPage() {
                     active={modalOpen}
                     done={Boolean(result)}
                     icon={<Send className="h-4 w-4" aria-hidden="true" />}
-                    label="4. Enviar transaccion mock"
+                    label="4. Enviar transaccion Ethereum"
                   />
                   <TimelineStep
                     done={Boolean(result)}
@@ -690,7 +725,7 @@ export function RevocationPage() {
                   {events.map((event) => (
                     <li
                       className={cn(
-                        "rounded-md border border-border/55 bg-black/40 p-3",
+                        "rounded-md border border-border/55 bg-muted/50 p-3",
                         event.type === "certificate_revoked" && "border-warning/35 bg-warning/10",
                       )}
                       data-ledger-event
@@ -713,7 +748,7 @@ export function RevocationPage() {
                   ))}
                 </ol>
               ) : (
-                <p className="rounded-md border border-border/55 bg-black/40 p-4 text-sm text-muted-foreground">
+                <p className="rounded-md border border-border/55 bg-muted/50 p-4 text-sm text-muted-foreground">
                   Sin eventos asociados al certificado seleccionado.
                 </p>
               )}
@@ -759,7 +794,7 @@ export function RevocationPage() {
 
                 return (
                   <div
-                    className="flex items-center justify-between gap-3 rounded-md border border-border/55 bg-black/35 p-3"
+                    className="flex items-center justify-between gap-3 rounded-md border border-border/55 bg-muted/45 p-3"
                     key={item.label}
                   >
                     <div className="flex items-center gap-2">
@@ -786,7 +821,7 @@ export function RevocationPage() {
         </section>
 
         <Modal
-          description="Cambia el estado del certificado, firma una transaccion mock y conserva el historial completo."
+          description="Cambia el estado del certificado, firma una transaccion Ethereum y conserva el historial completo."
           onOpenChange={setModalOpen}
           open={modalOpen}
           title="Advertencia de revocacion"
@@ -798,10 +833,10 @@ export function RevocationPage() {
               </p>
               <p className="mt-2 text-xs leading-5 text-muted-foreground">
                 El registro permanecera verificable como revocado y cualquier entidad publica vera el
-                estado actualizado en el ledger simulado.
+                estado actualizado en el ledger.
               </p>
             </div>
-            <div className="grid gap-1 rounded-md border border-border/55 bg-black/35 p-3">
+            <div className="grid gap-1 rounded-md border border-border/55 bg-muted/45 p-3">
               <FieldLine label="Certificado" value={selectedCertificate?.code ?? "Sin dato"} />
               <FieldLine label="Emisor responsable" value={selectedIssuer?.name ?? "Sin dato"} />
               <FieldLine label="Motivo" value={reason.trim()} />

@@ -18,16 +18,16 @@ describe("Prompt 15 configuracion, importacion/exportacion y permisos", () => {
     expect(within(page).getByRole("heading", { name: /configuracion operativa/i })).toBeInTheDocument();
 
     for (const section of [
-      "Perfil demo",
+      "Perfil academico",
       "Rol activo",
       "Red activa",
       "Wallet",
-      "Smart contract mock",
+      "Contrato desplegado",
       "Preferencias visuales",
       "Accesibilidad",
-      "Datos demo",
+      "Datos precargados",
       "Importar/exportar",
-      "Seguridad de sesion mock",
+      "Seguridad de sesion Web3",
       "Matriz de permisos",
     ]) {
       expect(within(page).getByText(section)).toBeInTheDocument();
@@ -65,13 +65,12 @@ describe("Prompt 15 configuracion, importacion/exportacion y permisos", () => {
     expect(useAppStore.getState().selectedNetwork).toBe("hardhat");
     expect(within(page).getByTestId("settings-active-network")).toHaveTextContent("hardhat");
 
-    await user.click(within(page).getByRole("button", { name: /conectar wallet mock/i }));
-    expect(useAppStore.getState().wallet.connected).toBe(true);
-    expect(within(page).getByTestId("settings-wallet-state")).toHaveTextContent("Conectada");
-
-    await user.click(within(page).getByRole("button", { name: /desconectar wallet/i }));
+    await user.click(within(page).getByRole("button", { name: /conectar metamask/i }));
     expect(useAppStore.getState().wallet.connected).toBe(false);
     expect(within(page).getByTestId("settings-wallet-state")).toHaveTextContent("Desconectada");
+    expect(
+      useAppStore.getState().toasts.some((toast) => /metamask no detectado/i.test(toast.title)),
+    ).toBe(true);
 
     await user.click(within(page).getByRole("button", { name: /activar modo presentacion/i }));
     await user.click(within(page).getByRole("button", { name: /activar modo accesible/i }));
@@ -124,7 +123,7 @@ describe("Prompt 15 configuracion, importacion/exportacion y permisos", () => {
     });
     expect(within(page).getByTestId("settings-import-status")).toHaveTextContent("Estado importado");
 
-    await user.click(within(page).getByRole("button", { name: /resetear datos demo/i }));
+    await user.click(within(page).getByRole("button", { name: /resetear datos precargados/i }));
     expect(await screen.findByRole("dialog", { name: /confirmar reset de demo/i })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /confirmar reset/i }));
 
@@ -132,6 +131,6 @@ describe("Prompt 15 configuracion, importacion/exportacion y permisos", () => {
       expect(useAppStore.getState().activeRole).toBe("authorized_issuer");
       expect(useAppStore.getState().certificates).toHaveLength(12);
     });
-    expect(within(page).getByTestId("settings-reset-status")).toHaveTextContent("Demo reiniciada");
+    expect(within(page).getByTestId("settings-reset-status")).toHaveTextContent("Datos precargados reiniciados");
   });
 });

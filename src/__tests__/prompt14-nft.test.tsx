@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it } from "vitest";
 import App from "@/app/App";
@@ -46,35 +46,23 @@ describe("Prompt 14 NFT academico ERC-721", () => {
     expect(within(page).getByTestId("nft-copy-status")).toHaveTextContent("Metadata copiada");
   });
 
-  it("simulates minting an ERC-721 token and links it to the selected certificate", async () => {
+  it("blocks manual minting because ERC-721 tokens are minted during on-chain issuance", async () => {
     const user = userEvent.setup();
     render(<App />);
 
     const page = screen.getByTestId("nft-workspace");
     await user.click(within(page).getByRole("button", { name: /seleccionar certificado cert-2026-0001/i }));
-    await user.click(within(page).getByRole("button", { name: /simular mint de nft/i }));
+    const initialTokens = useAppStore.getState().nftAcademicTokens.length;
 
-    expect(
-      await screen.findByRole("dialog", { name: /mint nft academico exitoso/i }),
-    ).toBeInTheDocument();
+    await user.click(within(page).getByRole("button", { name: /mint desde contrato/i }));
 
-    await waitFor(() => {
-      const state = useAppStore.getState();
-      const certificate = state.certificates.find((item) => item.id === "certificate-001");
-      expect(certificate?.nftTokenId).toMatch(/^NFT-ACAD-\d{4}$/);
-      expect(state.nftAcademicTokens.some((token) => token.certificateId === "certificate-001")).toBe(true);
-      expect(state.blockchainEvents[0]).toMatchObject({
-        certificateId: "certificate-001",
-        type: "nft_minted",
-      });
-    });
-
-    const mintedCertificate = useAppStore
-      .getState()
-      .certificates.find((item) => item.id === "certificate-001");
-    expect(within(page).getByTestId("nft-token-card")).toHaveTextContent(mintedCertificate?.nftTokenId ?? "");
+    expect(useAppStore.getState().nftAcademicTokens).toHaveLength(initialTokens);
+    expect(useAppStore.getState().certificates.find((item) => item.id === "certificate-001")?.nftTokenId).toBeUndefined();
     expect(within(page).getByTestId("nft-related-certificate")).toHaveTextContent("CERT-2026-0001");
-    expect(within(page).getByTestId("nft-token-timeline")).toHaveTextContent("NFT minteado");
+    expect(within(page).getByTestId("nft-token-timeline")).toHaveTextContent("Mint pendiente");
+    expect(
+      useAppStore.getState().toasts.some((toast) => /mint se genera al emitir/i.test(toast.title)),
+    ).toBe(true);
   });
 
   it("shows controlled transfer rules as blocked or administratively allowed", async () => {
@@ -85,10 +73,10 @@ describe("Prompt 14 NFT academico ERC-721", () => {
     const page = screen.getByTestId("nft-workspace");
     await user.click(within(page).getByRole("button", { name: /seleccionar certificado cert-2026-0008/i }));
 
-    await user.click(within(page).getByRole("button", { name: /simular transferencia bloqueada/i }));
+    await user.click(within(page).getByRole("button", { name: /transferencia bloqueada/i }));
     expect(within(page).getByTestId("nft-transfer-status")).toHaveTextContent("Transferencia bloqueada");
 
-    await user.click(within(page).getByRole("button", { name: /simular transferencia permitida/i }));
+    await user.click(within(page).getByRole("button", { name: /transferencia permitida/i }));
     expect(within(page).getByTestId("nft-transfer-status")).toHaveTextContent("Transferencia permitida");
     expect(within(page).getByTestId("nft-token-timeline")).toHaveTextContent(
       "correccion administrativa de wallet",

@@ -28,6 +28,7 @@ import { Progress } from "@/components/ui/progress";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { Textarea } from "@/components/ui/textarea";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
+import { canNavigateToRoute } from "@/lib/ui-permissions";
 import { cn } from "@/lib/cn";
 import { formatDateTime, numberFormatter } from "@/lib/formatters";
 import { calculateSha256, normalizeHash, shortenHash } from "@/lib/hash";
@@ -53,15 +54,15 @@ type VerificationResultView = {
 const methodLabels: Record<VerificationMethod, string> = {
   code: "Por codigo",
   hash: "Por hash",
-  pdf: "Por PDF simulado",
-  qr: "Por QR simulado",
+  pdf: "Por PDF",
+  qr: "Por QR",
 };
 
 const methodDescriptions: Record<VerificationMethod, string> = {
   code: "Ingresa el codigo publico del certificado emitido por la universidad.",
   hash: "Pega el hash SHA-256 del PDF para comparar contra el ledger.",
-  pdf: "Simula el contenido de un PDF y calcula una huella local.",
-  qr: "Lee una URL o payload QR simulado con codigo y hash.",
+  pdf: "Carga el PDF recibido y calcula su huella SHA-256 real.",
+  qr: "Lee una URL o payload QR con codigo y hash.",
 };
 
 const resultCopy: Record<
@@ -129,7 +130,7 @@ function TechnicalHash({
   value: string;
 }) {
   return (
-    <div className="rounded-md border border-border/55 bg-black/45 p-3">
+    <div className="rounded-md border border-border/55 bg-muted/55 p-3">
       <p className="text-[11px] font-semibold uppercase text-muted-foreground">{label}</p>
       <p className="mt-2 break-all font-mono text-[11px] leading-5 text-foreground">
         {value || "Sin evidencia"}
@@ -161,33 +162,25 @@ function resultKindForCertificate(certificate: Certificate | undefined, hashesMa
   return "valid";
 }
 
-function fakeOriginalPdf(certificate: Certificate) {
-  return [
-    "CERTICHAIN PDF SIMULADO",
-    `codigo=${certificate.code}`,
-    `estudiante=${certificate.studentName}`,
-    `hashRegistrado=${certificate.documentHash}`,
-    "contenido=Documento academico original usado para verificacion publica.",
-  ].join("\n");
-}
-
 function fakeQr(certificate: Certificate) {
   return `certichain://verify?code=${certificate.code}&hash=${certificate.documentHash}`;
 }
 
 export function VerificationPage() {
   const pageRef = useRef<HTMLDivElement>(null);
+  const activeRole = useAppStore((state) => state.activeRole);
   const certificates = useAppStore((state) => state.certificates);
   const blockchainEvents = useAppStore((state) => state.blockchainEvents);
-  const verifyCertificateByCode = useAppStore((state) => state.verifyCertificateByCode);
-  const verifyCertificateByHash = useAppStore((state) => state.verifyCertificateByHash);
+  const verifyCertificateByCodeAsync = useAppStore((state) => state.verifyCertificateByCodeAsync);
+  const verifyCertificateByHashAsync = useAppStore((state) => state.verifyCertificateByHashAsync);
+  const verifyCertificateByPdf = useAppStore((state) => state.verifyCertificateByPdf);
   const addToast = useAppStore((state) => state.addToast);
   const setRoute = useAppStore((state) => state.setRoute);
   const reducedMotion = useReducedMotion();
   const [activeMethod, setActiveMethod] = useState<VerificationMethod>("code");
   const [codeInput, setCodeInput] = useState("CERT-2026-0001");
   const [hashInput, setHashInput] = useState(certificates[0]?.documentHash ?? "");
-  const [pdfInput, setPdfInput] = useState(certificates[0] ? fakeOriginalPdf(certificates[0]) : "");
+  const [pdfFile, setPdfFile] = useState<File | null>(null);
   const [qrInput, setQrInput] = useState(certificates[0] ? fakeQr(certificates[0]) : "");
   const [caseId, setCaseId] = useState<CaseId>("valid");
   const [caseCertificateId, setCaseCertificateId] = useState(certificates[0]?.id ?? "");
@@ -216,7 +209,7 @@ export function VerificationPage() {
       : activeMethod === "hash"
         ? hashInput
         : activeMethod === "pdf"
-          ? pdfInput
+          ? pdfFile?.name ?? "Sin PDF cargado"
           : qrInput;
 
   useGSAP(
@@ -334,7 +327,7 @@ export function VerificationPage() {
       setCaseCertificateId(validCertificate.id);
       setCodeInput(validCertificate.code);
       setHashInput(validCertificate.documentHash);
-      setPdfInput(fakeOriginalPdf(validCertificate));
+      setPdfFile(null);
       setQrInput(fakeQr(validCertificate));
       return;
     }
@@ -344,19 +337,17 @@ export function VerificationPage() {
       setCaseCertificateId(revokedCertificate.id);
       setCodeInput(revokedCertificate.code);
       setHashInput(revokedCertificate.documentHash);
-      setPdfInput(fakeOriginalPdf(revokedCertificate));
+      setPdfFile(null);
       setQrInput(fakeQr(revokedCertificate));
       return;
     }
 
     if (nextCase === "manipulated") {
-      setActiveMethod("pdf");
+      setActiveMethod("hash");
       setCaseCertificateId(manipulatedCertificate.id);
       setCodeInput(manipulatedCertificate.code);
       setHashInput(manipulatedCertificate.documentHash);
-      setPdfInput(
-        `${fakeOriginalPdf(manipulatedCertificate)}\ncontenido=Texto alterado despues de emitir el certificado.`,
-      );
+      setPdfFile(null);
       setQrInput(
         `certichain://verify?code=${manipulatedCertificate.code}&hash=0x${"8".repeat(64)}`,
       );
@@ -367,13 +358,13 @@ export function VerificationPage() {
     setCaseCertificateId("");
     setCodeInput("CERT-2026-9999");
     setHashInput(`0x${"0".repeat(64)}`);
-    setPdfInput("PDF simulado sin registro distribuido para CERT-2026-9999.");
+    setPdfFile(null);
     setQrInput("certichain://verify?code=CERT-2026-9999");
   };
 
   const verifyByCode = async () => {
     const code = codeInput.trim().toUpperCase();
-    const storeResult = verifyCertificateByCode(code);
+    const storeResult = await verifyCertificateByCodeAsync(code);
     const certificate = storeResult.certificate;
     const calculatedHash = certificate
       ? certificate.documentHash
@@ -389,7 +380,7 @@ export function VerificationPage() {
 
   const verifyByHash = async () => {
     const normalized = normalizeHash(hashInput);
-    const storeResult = verifyCertificateByHash(normalized);
+    const storeResult = await verifyCertificateByHashAsync(normalized);
     const certificate = storeResult.certificate;
 
     if (manipulatedMode && certificate) {
@@ -410,17 +401,24 @@ export function VerificationPage() {
   };
 
   const verifyByPdf = async () => {
-    const hintedCertificate = certificateById(caseCertificateId);
-    const code = pdfInput.match(/CERT-\d{4}-\d{4}/i)?.[0]?.toUpperCase() ?? "";
-    const certificate = hintedCertificate ?? certificates.find((item) => item.code === code);
-    const calculatedHash =
-      certificate && !manipulatedMode ? certificate.documentHash : normalizeHash(await calculateSha256(pdfInput));
+    if (!pdfFile) {
+      return makeResult({
+        calculatedHash: "",
+        certificate: undefined,
+        registeredHash: "Sin hash registrado",
+        requestedEvidence: "Archivo PDF no cargado",
+      });
+    }
+
+    const storeResult = await verifyCertificateByPdf(pdfFile);
+    const certificate = storeResult.certificate;
+    const calculatedHash = normalizeHash(await calculateSha256(pdfFile));
 
     return makeResult({
       calculatedHash,
       certificate,
       registeredHash: certificate?.documentHash ?? "Sin hash registrado",
-      requestedEvidence: "PDF simulado",
+      requestedEvidence: pdfFile.name,
     });
   };
 
@@ -457,7 +455,7 @@ export function VerificationPage() {
     setActiveMethod("code");
     setCodeInput("");
     setHashInput("");
-    setPdfInput("");
+    setPdfFile(null);
     setQrInput("");
     setCaseCertificateId("");
     setManipulatedMode(false);
@@ -547,7 +545,7 @@ export function VerificationPage() {
               <div className="mb-3 flex flex-wrap gap-2">
                 <StatusBadge tone="online">Acceso publico</StatusBadge>
                 <StatusBadge tone="syncing">Ledger distribuido</StatusBadge>
-                <StatusBadge tone="neutral">Sin backend real</StatusBadge>
+                <StatusBadge tone="neutral">Sin base de datos</StatusBadge>
               </div>
               <h1 className="text-2xl font-semibold tracking-tight text-foreground">
                 Verificacion publica
@@ -558,7 +556,7 @@ export function VerificationPage() {
                 linea porque se consulta el registro distribuido.
               </p>
             </div>
-            <div className="rounded-md border border-border/55 bg-black/45 p-3">
+            <div className="rounded-md border border-border/55 bg-muted/55 p-3">
               <p className="text-xs font-semibold text-muted-foreground">Consulta actual</p>
               <p className="mt-2 truncate font-mono text-sm text-foreground">
                 {activeEvidence || "Sin evidencia"}
@@ -588,7 +586,7 @@ export function VerificationPage() {
                   return (
                     <button
                       className={cn(
-                        "grid min-h-20 gap-2 rounded-md border border-border/55 bg-black/38 p-3 text-left transition-colors hover:border-foreground/20 hover:bg-black/55 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/25",
+                        "grid min-h-20 gap-2 rounded-md border border-border/55 bg-muted/48 p-3 text-left transition-colors hover:border-foreground/20 hover:bg-muted/65 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/25",
                         activeMethod === method && "border-primary/35 bg-primary/10",
                       )}
                       key={method}
@@ -607,7 +605,7 @@ export function VerificationPage() {
                 })}
               </div>
 
-              <div className="grid gap-3 rounded-md border border-border/55 bg-black/35 p-3">
+              <div className="grid gap-3 rounded-md border border-border/55 bg-muted/45 p-3">
                 {activeMethod === "code" ? (
                   <label className="grid gap-2 text-xs font-semibold text-foreground">
                     Codigo publico
@@ -637,24 +635,27 @@ export function VerificationPage() {
 
                 {activeMethod === "pdf" ? (
                   <label className="grid gap-2 text-xs font-semibold text-foreground">
-                    PDF simulado
-                    <Textarea
-                      aria-label="PDF simulado"
-                      className="min-h-36"
+                    Archivo PDF
+                    <Input
+                      accept="application/pdf"
+                      aria-label="Archivo PDF"
                       onChange={(event) => {
-                        setPdfInput(event.target.value);
+                        setPdfFile(event.target.files?.[0] ?? null);
                         setManipulatedMode(false);
                       }}
-                      value={pdfInput}
+                      type="file"
                     />
+                    <span className="font-normal text-muted-foreground">
+                      {pdfFile ? pdfFile.name : "Sin archivo seleccionado"}
+                    </span>
                   </label>
                 ) : null}
 
                 {activeMethod === "qr" ? (
                   <label className="grid gap-2 text-xs font-semibold text-foreground">
-                    QR simulado
+                    QR publico
                     <Textarea
-                      aria-label="QR simulado"
+                      aria-label="QR publico"
                       className="min-h-28"
                       onChange={(event) => {
                         setQrInput(event.target.value);
@@ -686,19 +687,21 @@ export function VerificationPage() {
                   >
                     Copiar resultado
                   </Button>
-                  <Button
-                    icon={<FileSearch className="h-4 w-4" aria-hidden="true" />}
-                    onClick={showDetail}
-                    variant="secondary"
-                  >
-                    Ver detalle
-                  </Button>
+                  {canNavigateToRoute(activeRole, "certificates") ? (
+                    <Button
+                      icon={<FileSearch className="h-4 w-4" aria-hidden="true" />}
+                      onClick={showDetail}
+                      variant="secondary"
+                    >
+                      Ver detalle
+                    </Button>
+                  ) : null}
                   <Button
                     icon={<ShieldAlert className="h-4 w-4" aria-hidden="true" />}
                     onClick={simulateManipulatedDocument}
                     variant="secondary"
                   >
-                    Simular documento manipulado
+                    Probar documento manipulado
                   </Button>
                 </div>
               </div>
@@ -729,7 +732,7 @@ export function VerificationPage() {
                   <button
                     aria-label={item.label}
                     className={cn(
-                      "rounded-md border border-border/55 bg-black/38 p-3 text-left transition-colors hover:border-foreground/20 hover:bg-black/55 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/25",
+                      "rounded-md border border-border/55 bg-muted/48 p-3 text-left transition-colors hover:border-foreground/20 hover:bg-muted/65 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/25",
                       caseId === item.id && "border-primary/35 bg-primary/10",
                     )}
                     key={item.id}
@@ -755,7 +758,7 @@ export function VerificationPage() {
               <StatusBadge tone={displayedCopy.tone}>{displayedCopy.label}</StatusBadge>
             </CardHeader>
             <CardContent className="grid gap-3">
-              <div className="relative overflow-hidden rounded-md border border-border/55 bg-black/70 p-4">
+              <div className="relative overflow-hidden rounded-md border border-border/55 bg-muted/75 p-4">
                 <div
                   className="pointer-events-none absolute inset-y-0 left-0 w-1/3 bg-primary/10 blur-md"
                   data-scan-line
@@ -806,7 +809,7 @@ export function VerificationPage() {
                 </div>
               </div>
 
-              <div className="grid gap-1 rounded-md border border-border/55 bg-black/45 p-3">
+              <div className="grid gap-1 rounded-md border border-border/55 bg-muted/55 p-3">
                 <FieldLine
                   label="Estudiante"
                   value={displayedResult?.certificate?.studentName ?? "No encontrado"}
@@ -868,13 +871,13 @@ export function VerificationPage() {
             <CardContent className="grid gap-3 md:grid-cols-3">
               <TechnicalHash label="Hash calculado" value={displayedResult?.calculatedHash ?? ""} />
               <TechnicalHash label="Hash registrado" value={displayedResult?.registeredHash ?? ""} />
-              <div className="rounded-md border border-border/55 bg-black/45 p-3">
+              <div className="rounded-md border border-border/55 bg-muted/55 p-3">
                 <p className="text-[11px] font-semibold uppercase text-muted-foreground">Coincidencia</p>
                 <p className="mt-2 text-sm font-semibold text-foreground">
                   {displayedResult ? (displayedResult.match ? "Si, coincide con blockchain" : "No coincide") : "Pendiente"}
                 </p>
                 <p className="mt-2 text-[11px] leading-5 text-muted-foreground">
-                  La comparacion se hace contra el hash anclado en el contrato inteligente mock.
+                  La comparacion se hace contra el hash anclado en el contrato inteligente.
                 </p>
               </div>
             </CardContent>
@@ -930,7 +933,7 @@ export function VerificationPage() {
               <ol className="grid gap-2 md:grid-cols-3">
                 {displayedResult.events.map((event) => (
                   <li
-                    className="rounded-md border border-border/55 bg-black/40 p-3 motion-transform"
+                    className="rounded-md border border-border/55 bg-muted/50 p-3 motion-transform"
                     data-verification-event
                     key={event.id}
                   >
@@ -951,7 +954,7 @@ export function VerificationPage() {
                 ))}
               </ol>
             ) : (
-              <div className="rounded-md border border-border/55 bg-black/40 p-4 text-sm text-muted-foreground">
+              <div className="rounded-md border border-border/55 bg-muted/50 p-4 text-sm text-muted-foreground">
                 Sin eventos asociados todavia. Usa un caso de prueba y presiona Verificar.
               </div>
             )}

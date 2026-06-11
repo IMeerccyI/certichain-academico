@@ -35,6 +35,7 @@ import { cn } from "@/lib/cn";
 import { formatEth, numberFormatter } from "@/lib/formatters";
 import { importedAppStateSchema } from "@/lib/validators";
 import { shouldSkipMotion } from "@/lib/motion";
+import { getDeploymentByNetwork, isDeploymentReady } from "@/lib/web3/deployments";
 import { useAppStore } from "@/store/app-store";
 import type { NetworkType, Role } from "@/types/domain";
 
@@ -57,7 +58,7 @@ const roleDescriptions: Record<Role, string> = {
   academic_admin: "Administra emisores, redes, importacion y permisos de alto impacto.",
   auditor: "Consulta evidencia, ledger y trazabilidad sin modificar certificados.",
   authorized_issuer: "Emite, firma, revoca y puede mintear credenciales academicas validas.",
-  public_verifier: "Verifica autenticidad por codigo, hash o PDF mock sin alterar historial.",
+  public_verifier: "Verifica autenticidad por codigo, hash o PDF real sin alterar historial.",
   student: "Firma recepcion y consulta certificados asociados a su identidad academica.",
 };
 
@@ -122,9 +123,9 @@ const permissionActions: PermissionAction[] = [
       public_verifier: false,
       student: false,
     },
-    description: "Asocia Token ID ERC-721 mock a certificado valido.",
+    description: "El contrato crea el Token ID ERC-721 al emitir un certificado valido.",
     label: "Mint NFT",
-    method: "mintAcademicNft()",
+    method: "emitirCertificado()",
   },
   {
     allowed: {
@@ -189,7 +190,7 @@ function SettingToggle({
         "grid gap-2 rounded-md border p-3 text-left transition-all duration-200 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/25",
         active
           ? "border-foreground/25 bg-foreground text-background shadow-[inset_0_1px_0_hsl(var(--background)/0.18),0_18px_42px_-30px_hsl(var(--foreground)/0.7)]"
-          : "border-border/60 bg-black/42 text-foreground hover:border-foreground/18 hover:bg-secondary",
+          : "border-border/60 bg-muted/52 text-foreground hover:border-foreground/18 hover:bg-secondary",
       )}
       onClick={onClick}
       type="button"
@@ -267,7 +268,18 @@ export function SettingsPage() {
   const [pendingImport, setPendingImport] = useState("");
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [resetModalOpen, setResetModalOpen] = useState(false);
-  const [resetStatus, setResetStatus] = useState("Datos demo activos.");
+  const [resetStatus, setResetStatus] = useState("Datos precargados activos.");
+  const deployment = getDeploymentByNetwork(selectedNetwork);
+  const deploymentReady = isDeploymentReady(deployment);
+  const displayedContractAddress =
+    wallet.contractAddress || (deploymentReady ? deployment.address : "Pendiente de despliegue");
+  const contractStatus = wallet.connected
+    ? wallet.isContractReady
+      ? "Contrato listo"
+      : wallet.lastError ?? "Contrato pendiente"
+    : deploymentReady
+      ? "MetaMask desconectado"
+      : "Sin despliegue";
 
   const blockedActions = useMemo(
     () => permissionActions.filter((action) => !action.allowed[activeRole]),
@@ -327,7 +339,7 @@ export function SettingsPage() {
 
     try {
       copyTextWithSelection(exportJson);
-      setExportStatus("JSON copiado en la simulacion.");
+      setExportStatus("JSON copiado al portapapeles.");
     } catch {
       setExportStatus("JSON visible para seleccion manual.");
     }
@@ -372,7 +384,7 @@ export function SettingsPage() {
     addToast({
       title: imported ? "Estado importado" : "Importacion rechazada",
       description: imported
-        ? "La DApp mock actualizo datos, permisos y red activa."
+        ? "La DApp actualizo datos, permisos y red activa."
         : "El JSON no paso validacion estructural.",
       intent: imported ? "success" : "error",
     });
@@ -380,10 +392,10 @@ export function SettingsPage() {
 
   const handleConfirmReset = () => {
     resetDemoData("settings");
-    setResetStatus("Demo reiniciada con datos mock originales.");
+    setResetStatus("Datos precargados reiniciados.");
     setResetModalOpen(false);
     addToast({
-      title: "Demo reiniciada",
+      title: "Datos reiniciados",
       description: "Los certificados, eventos, tokens NFT y preferencias volvieron a fixtures.",
       intent: "success",
     });
@@ -405,19 +417,19 @@ export function SettingsPage() {
               <div className="mb-3 flex flex-wrap gap-2">
                 <StatusBadge tone="syncing">Configuracion local</StatusBadge>
                 <StatusBadge tone="online">Permisos activos</StatusBadge>
-                <StatusBadge tone="neutral">Demo sin backend</StatusBadge>
+                <StatusBadge tone="neutral">Sin backend</StatusBadge>
               </div>
               <h1 className="text-2xl font-semibold tracking-tight text-foreground">
                 Configuracion operativa
               </h1>
               <p className="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground">
-                Centro de control para rol, red, wallet, contrato mock, preferencias visuales,
+                Centro de control para rol, red, wallet, contrato desplegado, preferencias visuales,
                 accesibilidad, datos precargados, importacion/exportacion y seguridad de sesion
-                simulada.
+                Web3.
               </p>
             </div>
 
-            <div className="rounded-md border border-border/55 bg-black/45 p-3">
+            <div className="rounded-md border border-border/55 bg-muted/55 p-3">
               <div className="flex items-center gap-2 text-muted-foreground">
                 <Settings className="h-4 w-4" aria-hidden="true" />
                 <p className="text-xs font-semibold uppercase">Estado operativo</p>
@@ -438,18 +450,18 @@ export function SettingsPage() {
               <CardHeader className="flex flex-row items-center justify-between gap-3">
                 <div className="flex items-center gap-2">
                   <UserRound className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
-                  <p className="text-sm font-semibold text-foreground">Perfil demo</p>
+                  <p className="text-sm font-semibold text-foreground">Perfil academico</p>
                 </div>
                 <StatusBadge tone="neutral">{numberFormatter.format(certificates.length)} certificados</StatusBadge>
               </CardHeader>
               <CardContent className="grid gap-3">
-                <div className="grid gap-2 rounded-md border border-border/55 bg-black/45 p-3 text-xs">
+                <div className="grid gap-2 rounded-md border border-border/55 bg-muted/55 p-3 text-xs">
                   <div className="flex items-center justify-between gap-3">
                     <span className="text-muted-foreground">Universidades emisoras</span>
                     <span className="font-mono font-semibold text-foreground">{issuers.length}</span>
                   </div>
                   <div className="flex items-center justify-between gap-3">
-                    <span className="text-muted-foreground">Estudiantes demo</span>
+                    <span className="text-muted-foreground">Estudiantes precargados</span>
                     <span className="font-mono font-semibold text-foreground">{students.length}</span>
                   </div>
                   <div className="flex items-center justify-between gap-3">
@@ -476,7 +488,7 @@ export function SettingsPage() {
               </CardHeader>
               <CardContent className="grid gap-3">
                 <div
-                  className="rounded-md border border-border/55 bg-black/45 p-3 text-xs leading-5 text-muted-foreground"
+                  className="rounded-md border border-border/55 bg-muted/55 p-3 text-xs leading-5 text-muted-foreground"
                   data-testid="settings-active-role"
                 >
                   <span className="font-semibold text-foreground">{roleLabels[activeRole]}</span>
@@ -491,7 +503,7 @@ export function SettingsPage() {
                         "rounded-md border px-3 py-2 text-left text-xs font-semibold transition-all duration-200 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/25",
                         activeRole === role
                           ? "border-foreground/25 bg-foreground text-background"
-                          : "border-border/60 bg-black/42 text-muted-foreground hover:bg-secondary hover:text-foreground",
+                          : "border-border/60 bg-muted/52 text-muted-foreground hover:bg-secondary hover:text-foreground",
                       )}
                       key={role}
                       onClick={() => setActiveRole(role)}
@@ -532,7 +544,7 @@ export function SettingsPage() {
                         "rounded-md border p-3 text-left transition-all duration-200 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/25",
                         selectedNetwork === network
                           ? "border-foreground/25 bg-foreground text-background"
-                          : "border-border/60 bg-black/42 text-foreground hover:bg-secondary",
+                          : "border-border/60 bg-muted/52 text-foreground hover:bg-secondary",
                       )}
                       key={network}
                       onClick={() => switchNetwork(network)}
@@ -540,7 +552,7 @@ export function SettingsPage() {
                     >
                       <span className="block font-mono text-sm font-semibold">{networkLabels[network]}</span>
                       <span className={cn("mt-1 block text-[11px]", selectedNetwork === network ? "text-background/70" : "text-muted-foreground")}>
-                        {network === "sepolia" ? "Demo publica" : network === "hardhat" ? "Nodo local" : "Laboratorio"}
+                        {network === "sepolia" ? "Testnet publica" : network === "hardhat" ? "Nodo local" : "Laboratorio"}
                       </span>
                     </button>
                   ))}
@@ -557,7 +569,7 @@ export function SettingsPage() {
                   </div>
                 </CardHeader>
                 <CardContent className="grid gap-3">
-                  <div className="rounded-md border border-border/55 bg-black/45 p-3 text-xs">
+                  <div className="rounded-md border border-border/55 bg-muted/55 p-3 text-xs">
                     <div className="flex items-center justify-between gap-3">
                       <span className="text-muted-foreground">Estado</span>
                       <span className="font-semibold text-foreground" data-testid="settings-wallet-state">
@@ -582,7 +594,7 @@ export function SettingsPage() {
                       icon={<PlugZap className="h-4 w-4" aria-hidden="true" />}
                       onClick={connectWallet}
                     >
-                      Conectar wallet mock
+                      Conectar MetaMask
                     </Button>
                   )}
                 </CardContent>
@@ -592,15 +604,16 @@ export function SettingsPage() {
                 <CardHeader>
                   <div className="flex items-center gap-2">
                     <Code2 className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
-                    <p className="text-sm font-semibold text-foreground">Smart contract mock</p>
+                    <p className="text-sm font-semibold text-foreground">Contrato desplegado</p>
                   </div>
                 </CardHeader>
                 <CardContent className="grid gap-2 text-xs">
-                  <div className="rounded-md border border-border/55 bg-black/45 p-3">
+                  <div className="rounded-md border border-border/55 bg-muted/55 p-3">
                     <p className="text-muted-foreground">Contrato academico</p>
                     <p className="mt-1 truncate font-mono text-foreground">
-                      0xC3A7c01E00000000000000000000000000AcaD01
+                      {displayedContractAddress}
                     </p>
+                    <p className="mt-1 text-[11px] text-muted-foreground">{contractStatus}</p>
                   </div>
                   <div className="grid grid-cols-2 gap-2">
                     <StatusBadge tone="neutral">emitirCertificado()</StatusBadge>
@@ -650,14 +663,14 @@ export function SettingsPage() {
                 />
                 <SettingToggle
                   active={settings.demoMode}
-                  description="Evita conexiones reales y mantiene la simulacion controlada."
+                  description="Mantiene los fixtures academicos de arranque para pruebas rapidas."
                   icon={<ShieldCheck className="h-4 w-4" aria-hidden="true" />}
-                  label="Activar modo demo"
+                  label="Usar datos precargados"
                   onClick={() => updateSettings({ demoMode: !settings.demoMode })}
                 />
               </div>
               <div
-                className="rounded-md border border-border/55 bg-black/35 p-3 text-xs leading-5 text-muted-foreground"
+                className="rounded-md border border-border/55 bg-muted/45 p-3 text-xs leading-5 text-muted-foreground"
                 data-testid="settings-mode-summary"
               >
                 {modeSummary || "Modo estandar"}
@@ -698,11 +711,11 @@ export function SettingsPage() {
             <CardHeader>
               <div className="flex items-center gap-2">
                 <Database className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
-                <p className="text-sm font-semibold text-foreground">Datos demo</p>
+                <p className="text-sm font-semibold text-foreground">Datos precargados</p>
               </div>
             </CardHeader>
             <CardContent className="grid gap-3">
-              <div className="grid gap-2 rounded-md border border-border/55 bg-black/45 p-3 text-xs">
+              <div className="grid gap-2 rounded-md border border-border/55 bg-muted/55 p-3 text-xs">
                 <div className="flex justify-between gap-3">
                   <span className="text-muted-foreground">Revocaciones</span>
                   <span className="font-mono text-foreground">{revocationRecords.length}</span>
@@ -723,10 +736,10 @@ export function SettingsPage() {
                 onClick={() => setResetModalOpen(true)}
                 variant="danger"
               >
-                Resetear datos demo
+                Resetear datos precargados
               </Button>
               <div
-                className="rounded-md border border-border/55 bg-black/35 p-3 text-xs leading-5 text-muted-foreground"
+                className="rounded-md border border-border/55 bg-muted/45 p-3 text-xs leading-5 text-muted-foreground"
                 data-testid="settings-reset-status"
               >
                 {resetStatus}
@@ -775,7 +788,7 @@ export function SettingsPage() {
                 readOnly
                 value={exportJson}
               />
-              <div className="rounded-md border border-border/55 bg-black/35 p-3 text-xs text-muted-foreground">
+              <div className="rounded-md border border-border/55 bg-muted/45 p-3 text-xs text-muted-foreground">
                 {exportStatus}
               </div>
               <label className="grid gap-2 text-xs font-semibold text-muted-foreground">
@@ -796,7 +809,7 @@ export function SettingsPage() {
                 Importar estado JSON
               </Button>
               <div
-                className="rounded-md border border-border/55 bg-black/35 p-3 text-xs leading-5 text-muted-foreground"
+                className="rounded-md border border-border/55 bg-muted/45 p-3 text-xs leading-5 text-muted-foreground"
                 data-testid="settings-import-status"
               >
                 {importStatus}
@@ -818,9 +831,9 @@ export function SettingsPage() {
               </p>
             </CardHeader>
             <CardContent>
-              <div className="overflow-x-auto rounded-lg border border-border bg-black/35">
+              <div className="overflow-x-auto rounded-lg border border-border bg-muted/45">
                 <table className="w-full min-w-[58rem] text-left text-xs">
-                  <thead className="bg-black/55 text-muted-foreground">
+                  <thead className="bg-muted/65 text-muted-foreground">
                     <tr>
                       <th className="px-3 py-2 font-medium">Accion</th>
                       {roleOptions.map((role) => (
@@ -857,7 +870,7 @@ export function SettingsPage() {
             <CardHeader>
               <div className="flex items-center gap-2">
                 <ShieldCheck className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
-                <p className="text-sm font-semibold text-foreground">Seguridad de sesion mock</p>
+                <p className="text-sm font-semibold text-foreground">Seguridad de sesion Web3</p>
               </div>
             </CardHeader>
             <CardContent className="grid gap-3">
@@ -871,11 +884,11 @@ export function SettingsPage() {
               <div className="rounded-md border border-warning/25 bg-warning/10 p-3 text-xs leading-5 text-warning">
                 <div className="flex items-center gap-2">
                   <AlertTriangle className="h-4 w-4" aria-hidden="true" />
-                  <span className="font-semibold">Sesion simulada</span>
+                  <span className="font-semibold">Sesion con MetaMask</span>
                 </div>
                 <p className="mt-2">
-                  No se envian firmas, llaves privadas ni transacciones reales. Los permisos se
-                  aplican sobre el estado local para demostrar el contrato.
+                  Las llaves privadas permanecen en la wallet. Las operaciones de escritura se
+                  bloquean si no hay contrato conectado y se confirman desde MetaMask.
                 </p>
               </div>
             </CardContent>
@@ -909,7 +922,7 @@ export function SettingsPage() {
       </Modal>
 
       <Modal
-        description="El reset volvera a cargar fixtures academicos, eventos blockchain mock, tokens NFT y preferencias iniciales."
+        description="El reset volvera a cargar fixtures academicos, eventos blockchain, tokens NFT y preferencias iniciales."
         onOpenChange={setResetModalOpen}
         open={resetModalOpen}
         title="Confirmar reset de demo"

@@ -10,7 +10,7 @@ import {
   manipulatedDocumentCases,
   verificationAttempts,
   verifierEntities,
-} from "@/data/mock-data";
+} from "@/data/fixture-data";
 import { useAppStore } from "@/store/app-store";
 
 describe("Prompt 03 domain data and store", () => {
@@ -19,7 +19,7 @@ describe("Prompt 03 domain data and store", () => {
     useAppStore.getState().resetDemoData();
   });
 
-  it("loads the required local mock dataset", () => {
+  it("loads the required local fixture dataset", () => {
     expect(certificates).toHaveLength(12);
     expect(students).toHaveLength(5);
     expect(issuers).toHaveLength(5);
@@ -32,9 +32,10 @@ describe("Prompt 03 domain data and store", () => {
     expect(monthlyActivity.length).toBeGreaterThanOrEqual(6);
   });
 
-  it("lets an authorized role issue, verify, receive and revoke certificates", async () => {
+  it("lets fixture certificates be verified but blocks writes without a connected contract", async () => {
     const store = useAppStore.getState();
     store.setActiveRole("authorized_issuer");
+    const initialEvents = useAppStore.getState().blockchainEvents.length;
 
     const issued = await store.issueCertificate({
       career: "Ingenieria de Sistemas",
@@ -48,21 +49,25 @@ describe("Prompt 03 domain data and store", () => {
       university: "Universidad Mayor de San Andres",
     });
 
-    expect(issued).not.toBeNull();
-    expect(useAppStore.getState().certificates).toHaveLength(13);
+    expect(issued).toBeNull();
+    expect(useAppStore.getState().certificates).toHaveLength(12);
 
-    const verified = useAppStore.getState().verifyCertificateByCode(issued?.code ?? "");
-    expect(verified.status).toBe("pending_reception");
+    const verified = useAppStore.getState().verifyCertificateByCode("CERT-2026-0001");
+    expect(verified.status).toBe("valid");
 
-    const received = useAppStore.getState().signStudentReception(issued?.id ?? "");
-    expect(received?.receptionSignature).toContain("student-reception");
-    expect(received?.status).toBe("valid");
+    const received = await useAppStore.getState().signStudentReception("certificate-002");
+    expect(received).toBeUndefined();
+    expect(
+      useAppStore.getState().certificates.find((certificate) => certificate.id === "certificate-002")?.status,
+    ).toBe("pending_reception");
 
-    const revoked = useAppStore
+    const revoked = await useAppStore
       .getState()
-      .revokeCertificate(issued?.id ?? "", "Correccion administrativa de prueba");
-    expect(revoked?.status).toBe("revoked");
-    expect(useAppStore.getState().revocationRecords.length).toBe(5);
+      .revokeCertificate("certificate-001", "Correccion administrativa de prueba");
+    expect(revoked).toBeUndefined();
+    expect(useAppStore.getState().revocationRecords.length).toBe(4);
+    expect(useAppStore.getState().blockchainEvents).toHaveLength(initialEvents);
+    expect(useAppStore.getState().toasts.some((toast) => /contrato no conectado/i.test(toast.title))).toBe(true);
   });
 
   it("blocks issuer actions for student role and safely handles invalid imports", async () => {

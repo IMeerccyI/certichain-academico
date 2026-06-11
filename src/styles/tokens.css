@@ -1,49 +1,54 @@
-:root {
-  --background: 0 0% 4%;
-  --foreground: 210 13% 88%;
-  --card: 0 0% 10%;
-  --card-foreground: 210 14% 89%;
-  --primary: 220 72% 54%;
+:root,
+.dark {
+  --background: 222 24% 7%;
+  --foreground: 210 16% 90%;
+  --card: 222 18% 11%;
+  --card-foreground: 210 16% 92%;
+  --primary: 217 78% 58%;
   --primary-foreground: 220 18% 98%;
-  --secondary: 0 0% 13%;
+  --secondary: 222 14% 15%;
   --secondary-foreground: 210 12% 84%;
-  --muted: 0 0% 12%;
-  --muted-foreground: 215 7% 57%;
-  --accent: 267 56% 55%;
+  --muted: 222 12% 14%;
+  --muted-foreground: 215 9% 58%;
+  --accent: 262 58% 58%;
   --accent-foreground: 220 18% 98%;
   --destructive: 356 62% 52%;
   --destructive-foreground: 220 18% 98%;
-  --success: 162 58% 34%;
+  --success: 158 52% 42%;
   --success-foreground: 164 100% 8%;
-  --warning: 34 78% 43%;
+  --warning: 34 78% 46%;
   --warning-foreground: 28 58% 7%;
-  --border: 0 0% 18%;
-  --input: 0 0% 10%;
-  --ring: 220 72% 54%;
-  --shadow-ledger: 0 0% 0%;
+  --border: 222 12% 20%;
+  --input: 222 16% 12%;
+  --ring: 217 78% 58%;
+  --shadow-ledger: 222 40% 4%;
+  --chart-grid: 222 12% 22%;
+  --chart-muted: 215 9% 58%;
 }
 
-.dark {
-  --background: 0 0% 4%;
-  --foreground: 210 13% 88%;
-  --card: 0 0% 10%;
-  --card-foreground: 210 14% 89%;
-  --primary: 220 72% 54%;
+.light {
+  --background: 40 30% 97%;
+  --foreground: 222 28% 14%;
+  --card: 0 0% 100%;
+  --card-foreground: 222 28% 14%;
+  --primary: 217 72% 46%;
   --primary-foreground: 220 18% 98%;
-  --secondary: 0 0% 13%;
-  --secondary-foreground: 210 12% 84%;
-  --muted: 0 0% 12%;
-  --muted-foreground: 215 7% 57%;
-  --accent: 267 56% 55%;
+  --secondary: 40 22% 93%;
+  --secondary-foreground: 222 18% 28%;
+  --muted: 40 18% 92%;
+  --muted-foreground: 220 10% 42%;
+  --accent: 262 48% 52%;
   --accent-foreground: 220 18% 98%;
-  --destructive: 356 62% 52%;
+  --destructive: 356 62% 48%;
   --destructive-foreground: 220 18% 98%;
-  --success: 162 58% 34%;
+  --success: 158 48% 36%;
   --success-foreground: 164 100% 8%;
-  --warning: 34 78% 43%;
+  --warning: 34 78% 40%;
   --warning-foreground: 28 58% 7%;
-  --border: 0 0% 18%;
-  --input: 0 0% 10%;
-  --ring: 220 72% 54%;
-  --shadow-ledger: 0 0% 0%;
+  --border: 40 14% 86%;
+  --input: 0 0% 100%;
+  --ring: 217 72% 46%;
+  --shadow-ledger: 220 20% 70%;
+  --chart-grid: 40 12% 88%;
+  --chart-muted: 220 10% 48%;
 }

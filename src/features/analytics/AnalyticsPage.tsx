@@ -38,13 +38,18 @@ import { AnimatedNumber, MotionPage } from "@/components/motion";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { StatusBadge } from "@/components/ui/status-badge";
-import { monthlyActivity } from "@/data/mock-data";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
 import { cn } from "@/lib/cn";
 import { compactFormatter, numberFormatter } from "@/lib/formatters";
 import { setMotionCompleteState, shouldSkipMotion } from "@/lib/motion";
 import { useAppStore } from "@/store/app-store";
-import type { Certificate, CertificateStatus } from "@/types/domain";
+import type {
+  AnalyticsSnapshot,
+  Certificate,
+  CertificateStatus,
+  RevocationRecord,
+  VerificationAttempt,
+} from "@/types/domain";
 
 type PeriodFilter = "year" | "semester" | "quarter";
 type StatusFilter = Certificate["status"] | "all";
@@ -115,8 +120,104 @@ const testChartSize = {
   width: 360,
 };
 
+const monthLabels = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
+
 function chartFill(index: number) {
   return chartColors[index % chartColors.length];
+}
+
+function parseDateTime(value?: string) {
+  const time = Date.parse(value ?? "");
+
+  return Number.isNaN(time) ? undefined : time;
+}
+
+function monthKeyFromTime(time: number) {
+  const date = new Date(time);
+
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+function createMonthlyRow(time: number): AnalyticsSnapshot {
+  const date = new Date(time);
+
+  return {
+    gasCostUsd: 0,
+    issued: 0,
+    label: monthLabels[date.getUTCMonth()] ?? "Mes",
+    manipulated: 0,
+    revoked: 0,
+    verified: 0,
+  };
+}
+
+function buildMonthlyActivity({
+  certificates,
+  revocationRecords,
+  verificationAttempts,
+}: {
+  certificates: Certificate[];
+  revocationRecords: RevocationRecord[];
+  verificationAttempts: VerificationAttempt[];
+}) {
+  const eventTimes = [
+    ...certificates
+      .map((certificate) => parseDateTime(certificate.issuedAt || certificate.issueDate || certificate.createdAt))
+      .filter((time): time is number => time !== undefined),
+    ...verificationAttempts
+      .map((attempt) => parseDateTime(attempt.attemptedAt))
+      .filter((time): time is number => time !== undefined),
+    ...revocationRecords
+      .map((record) => parseDateTime(record.revokedAt))
+      .filter((time): time is number => time !== undefined),
+  ];
+  const latestTime = eventTimes.length > 0 ? Math.max(...eventTimes) : Date.now();
+  const latest = new Date(latestTime);
+  const rows = new Map<string, AnalyticsSnapshot>();
+
+  for (let offset = 11; offset >= 0; offset -= 1) {
+    const rowTime = Date.UTC(latest.getUTCFullYear(), latest.getUTCMonth() - offset, 1);
+    rows.set(monthKeyFromTime(rowTime), createMonthlyRow(rowTime));
+  }
+
+  const addCount = (
+    value: string | undefined,
+    key: "issued" | "manipulated" | "revoked" | "verified",
+  ) => {
+    const time = parseDateTime(value);
+
+    if (time === undefined) {
+      return;
+    }
+
+    const row = rows.get(monthKeyFromTime(time));
+
+    if (row) {
+      row[key] += 1;
+    }
+  };
+
+  for (const certificate of certificates) {
+    addCount(certificate.issuedAt || certificate.issueDate || certificate.createdAt, "issued");
+
+    if (certificate.status === "manipulated") {
+      addCount(certificate.updatedAt || certificate.issuedAt, "manipulated");
+    }
+  }
+
+  for (const attempt of verificationAttempts) {
+    addCount(attempt.attemptedAt, "verified");
+
+    if (attempt.resultStatus === "manipulated") {
+      addCount(attempt.attemptedAt, "manipulated");
+    }
+  }
+
+  for (const record of revocationRecords) {
+    addCount(record.revokedAt, "revoked");
+  }
+
+  return Array.from(rows.values());
 }
 
 function getPeriodLabel(period: PeriodFilter) {
@@ -198,7 +299,7 @@ function FilterButton({
         "shrink-0 rounded-md border px-3 py-1.5 text-xs font-semibold transition-all duration-200 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/25",
         active
           ? "border-foreground/25 bg-foreground text-background shadow-[inset_0_1px_0_hsl(var(--background)/0.18),0_14px_30px_-24px_hsl(var(--foreground)/0.72)]"
-          : "border-border/65 bg-black/40 text-muted-foreground hover:border-foreground/20 hover:bg-secondary hover:text-foreground",
+          : "border-border/65 bg-muted/50 text-muted-foreground hover:border-foreground/20 hover:bg-secondary hover:text-foreground",
       )}
       onClick={onClick}
       type="button"
@@ -238,7 +339,7 @@ function MetricTile({
           {icon}
         </span>
       </div>
-      <div className="mt-3 rounded-md border border-border/50 bg-black/42 px-3 py-2 text-[11px] leading-5 text-muted-foreground">
+      <div className="mt-3 rounded-md border border-border/50 bg-muted/52 px-3 py-2 text-[11px] leading-5 text-muted-foreground">
         {detail}
       </div>
     </article>
@@ -266,14 +367,14 @@ function ChartPanel({
           <p className="mt-1 text-xs leading-5 text-muted-foreground">{description}</p>
         </div>
         <span
-          className="shrink-0 rounded-md border border-border/60 bg-black/45 px-2.5 py-1 font-mono text-xs font-semibold text-foreground"
+          className="shrink-0 rounded-md border border-border/60 bg-muted/55 px-2.5 py-1 font-mono text-xs font-semibold text-foreground"
           data-analytics-highlight
         >
           {metric}
         </span>
       </CardHeader>
       <CardContent className="grid gap-3">
-        <div className="h-60 min-w-0 rounded-md border border-border/60 bg-black/45 p-2">
+        <div className="h-60 min-w-0 rounded-md border border-border/60 bg-muted/55 p-2">
           {children}
         </div>
       </CardContent>
@@ -283,7 +384,7 @@ function ChartPanel({
 
 function EmptyChartState({ text = "Sin datos para el filtro activo" }: { text?: string }) {
   return (
-    <div className="grid h-full min-h-52 place-items-center rounded-md border border-dashed border-border/60 bg-black/30 p-4 text-center text-xs text-muted-foreground">
+    <div className="grid h-full min-h-52 place-items-center rounded-md border border-dashed border-border/60 bg-muted/40 p-4 text-center text-xs text-muted-foreground">
       {text}
     </div>
   );
@@ -308,6 +409,11 @@ export function AnalyticsPage() {
     [certificates],
   );
 
+  const monthlyActivity = useMemo(
+    () => buildMonthlyActivity({ certificates, revocationRecords, verificationAttempts }),
+    [certificates, revocationRecords, verificationAttempts],
+  );
+
   const activeMonthlyActivity = useMemo(() => {
     if (periodFilter === "quarter") {
       return monthlyActivity.slice(-3);
@@ -318,7 +424,7 @@ export function AnalyticsPage() {
     }
 
     return monthlyActivity;
-  }, [periodFilter]);
+  }, [monthlyActivity, periodFilter]);
 
   const filteredCertificates = useMemo(
     () =>
@@ -563,12 +669,12 @@ export function AnalyticsPage() {
 
   const handleExportReport = () => {
     const facultyLabel = facultyFilter === "all" ? "Todas las facultades" : facultyFilter;
-    const report = `Reporte simulado generado | ${getPeriodLabel(periodFilter)} | ${facultyLabel} | ${getStatusLabel(statusFilter)} | ${numberFormatter.format(filteredCertificates.length)} certificados`;
+    const report = `Reporte local generado | datos actuales y fixtures academicos | ${getPeriodLabel(periodFilter)} | ${facultyLabel} | ${getStatusLabel(statusFilter)} | ${numberFormatter.format(filteredCertificates.length)} certificados`;
 
     setExportResult(report);
     addToast({
-      title: "Reporte simulado generado",
-      description: "La analitica local preparo una lectura exportable para la defensa.",
+      title: "Reporte local generado",
+      description: "La analitica local preparo un exporte con datos actuales y fixtures academicos.",
       intent: "success",
     });
   };
@@ -587,7 +693,7 @@ export function AnalyticsPage() {
           <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(18rem,0.36fr)]">
             <div className="min-w-0">
               <div className="mb-3 flex flex-wrap gap-2">
-                <StatusBadge tone="syncing">Recharts + mock data</StatusBadge>
+                <StatusBadge tone="syncing">Recharts + datos academicos</StatusBadge>
                 <StatusBadge tone="online">Analitica local</StatusBadge>
                 <StatusBadge tone="neutral">{getPeriodLabel(periodFilter)}</StatusBadge>
               </div>
@@ -596,12 +702,12 @@ export function AnalyticsPage() {
               </h1>
               <p className="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground">
                 Vista ejecutiva para evaluar volumen de certificados, verificaciones publicas,
-                intentos no validos, revocaciones, actividad mensual y rendimiento simulado de
-                emision academica sobre Ethereum.
+                intentos no validos, revocaciones, actividad mensual y tiempos de emision
+                academica sobre Ethereum.
               </p>
             </div>
 
-            <div className="rounded-md border border-border/55 bg-black/45 p-3">
+            <div className="rounded-md border border-border/55 bg-muted/55 p-3">
               <div className="flex items-center gap-2 text-muted-foreground">
                 <LineChartIcon className="h-4 w-4" aria-hidden="true" />
                 <p className="text-xs font-semibold uppercase">Lectura actual</p>
@@ -682,7 +788,7 @@ export function AnalyticsPage() {
 
         <section className="grid min-w-0 gap-3 md:grid-cols-2 xl:grid-cols-5">
           <MetricTile
-            detail="Registros academicos anclados o filtrados desde el ledger mock."
+            detail="Registros academicos anclados o filtrados desde datos locales."
             icon={<FileCheck2 className="h-4 w-4" aria-hidden="true" />}
             testId="metric-total-certificates"
             title="Certificados emitidos"
@@ -738,7 +844,7 @@ export function AnalyticsPage() {
             value={<span title={metrics.topFaculty.name}>{metrics.topFaculty.name}</span>}
           />
           <MetricTile
-            detail="Tiempo simulado de PDF, hash SHA-256, firma y anclaje."
+            detail="Tiempo estimado de PDF, hash SHA-256, firma y anclaje."
             icon={<Timer className="h-4 w-4" aria-hidden="true" />}
             testId="metric-average-emission-time"
             title="Tiempo promedio"
@@ -876,7 +982,7 @@ export function AnalyticsPage() {
             <div className="flex flex-wrap gap-1.5">
               {activeMonthlyActivity.map((month) => (
                 <span
-                  className="rounded border border-border/50 bg-black/40 px-2 py-1 font-mono text-[10px] text-muted-foreground"
+                  className="rounded border border-border/50 bg-muted/50 px-2 py-1 font-mono text-[10px] text-muted-foreground"
                   key={month.label}
                 >
                   {month.label}
@@ -945,12 +1051,12 @@ export function AnalyticsPage() {
               <StatusBadge tone="neutral">{numberFormatter.format(summaryRows.length)} grupos</StatusBadge>
             </CardHeader>
             <CardContent>
-              <div className="overflow-x-auto rounded-lg border border-border bg-black/30">
+              <div className="overflow-x-auto rounded-lg border border-border bg-muted/40">
                 <table
                   className="w-full min-w-[54rem] text-left text-xs"
                   data-testid="analytics-summary-table"
                 >
-                  <thead className="bg-black/55 text-muted-foreground">
+                  <thead className="bg-muted/65 text-muted-foreground">
                     <tr>
                       <th className="px-3 py-2 font-medium">Facultad</th>
                       <th className="px-3 py-2 font-medium">Emisor dominante</th>
@@ -991,11 +1097,11 @@ export function AnalyticsPage() {
             <CardHeader>
               <p className="text-sm font-semibold text-foreground">Exportacion para defensa</p>
               <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                Simula la preparacion de un reporte local sin backend ni blockchain real.
+                Prepara un reporte local con datos actuales y fixtures academicos para la defensa.
               </p>
             </CardHeader>
             <CardContent className="grid gap-3">
-              <div className="grid gap-2 rounded-md border border-border/55 bg-black/45 p-3">
+              <div className="grid gap-2 rounded-md border border-border/55 bg-muted/55 p-3">
                 <div className="flex items-center justify-between gap-3">
                   <span className="text-xs text-muted-foreground">Periodo</span>
                   <span className="text-right text-xs font-semibold text-foreground">
@@ -1021,7 +1127,7 @@ export function AnalyticsPage() {
                 onClick={handleExportReport}
                 variant="secondary"
               >
-                Exportar reporte simulado
+                Exportar reporte local
               </Button>
               {exportResult ? (
                 <div
@@ -1031,7 +1137,7 @@ export function AnalyticsPage() {
                   {exportResult}
                 </div>
               ) : (
-                <div className="rounded-md border border-border/55 bg-black/35 p-3 text-xs leading-5 text-muted-foreground">
+                <div className="rounded-md border border-border/55 bg-muted/45 p-3 text-xs leading-5 text-muted-foreground">
                   El reporte incluira filtros, KPIs, graficos y tabla de resumen.
                 </div>
               )}

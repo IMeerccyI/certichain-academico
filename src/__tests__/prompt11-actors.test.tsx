@@ -34,9 +34,10 @@ describe("Prompt 11 actor management", () => {
     expect(verifierPanel).toHaveTextContent("Hash, emisor y estado confirmados.");
   });
 
-  it("deactivates and reactivates an issuer, blocking issue and revoke with that issuer", async () => {
+  it("blocks issuer management and certificate writes when the contract is not connected", async () => {
     const user = userEvent.setup();
     useAppStore.getState().setRoute("issuers");
+    const initialEvents = useAppStore.getState().blockchainEvents.length;
     render(<App />);
 
     const page = screen.getByTestId("issuers-workspace");
@@ -45,12 +46,12 @@ describe("Prompt 11 actor management", () => {
     await user.click(within(issuerRow).getByRole("button", { name: /desactivar emisor/i }));
 
     await waitFor(() => {
-      expect(useAppStore.getState().issuers.find((issuer) => issuer.id === "issuer-rector-umsa")?.active).toBe(false);
+      expect(
+        useAppStore.getState().toasts.some((toast) => /contrato no conectado/i.test(toast.title)),
+      ).toBe(true);
     });
-    expect(useAppStore.getState().blockchainEvents[0]).toMatchObject({
-      actor: "issuer-rector-umsa",
-      type: "issuer_deactivated",
-    });
+    expect(useAppStore.getState().issuers.find((issuer) => issuer.id === "issuer-rector-umsa")?.active).toBe(true);
+    expect(useAppStore.getState().blockchainEvents).toHaveLength(initialEvents);
 
     const blockedIssue = await useAppStore.getState().issueCertificate({
       career: "Ingenieria de Sistemas",
@@ -58,33 +59,25 @@ describe("Prompt 11 actor management", () => {
       faculty: "Facultad de Tecnologia",
       identityDocument: "LP-7482910",
       issuerId: "issuer-rector-umsa",
-      observations: "Debe bloquearse por emisor inactivo.",
+      observations: "Debe bloquearse por contrato no conectado.",
       pdfName: "bloqueado.pdf",
       studentId: "student-juan",
       university: "Universidad Mayor de San Andres",
     });
     expect(blockedIssue).toBeNull();
 
-    const blockedRevoke = useAppStore
+    const blockedRevoke = await useAppStore
       .getState()
-      .revokeCertificate("certificate-001", "Debe bloquearse por emisor inactivo");
+      .revokeCertificate("certificate-001", "Debe bloquearse por contrato no conectado");
     expect(blockedRevoke).toBeUndefined();
     expect(useAppStore.getState().certificates.find((item) => item.id === "certificate-001")?.status).toBe("valid");
-
-    await user.click(within(issuerRow).getByRole("button", { name: /activar emisor/i }));
-
-    await waitFor(() => {
-      expect(useAppStore.getState().issuers.find((issuer) => issuer.id === "issuer-rector-umsa")?.active).toBe(true);
-    });
-    expect(useAppStore.getState().blockchainEvents[0]).toMatchObject({
-      actor: "issuer-rector-umsa",
-      type: "issuer_authorized",
-    });
+    expect(useAppStore.getState().blockchainEvents).toHaveLength(initialEvents);
   });
 
   it("renders students with academic history and signs pending reception", async () => {
     const user = userEvent.setup();
     useAppStore.getState().setActiveRole("student");
+    useAppStore.getState().setActivePersona({ studentId: "student-valeria" });
     useAppStore.getState().setRoute("students");
     render(<App />);
 
@@ -105,13 +98,14 @@ describe("Prompt 11 actor management", () => {
 
     await waitFor(() => {
       const signed = useAppStore.getState().certificates.find((item) => item.id === "certificate-002");
-      expect(signed?.status).toBe("valid");
-      expect(signed?.receptionSignature).toContain("student-reception");
+      expect(signed?.status).toBe("pending_reception");
+      expect(signed?.receptionSignature).toBeUndefined();
     });
-    expect(useAppStore.getState().blockchainEvents[0]).toMatchObject({
+    expect(useAppStore.getState().toasts.some((toast) => /contrato no conectado/i.test(toast.title))).toBe(true);
+    expect(useAppStore.getState().blockchainEvents[0]).not.toMatchObject({
       certificateId: "certificate-002",
       type: "student_received",
     });
-    expect(detail).toHaveTextContent("Recepcion firmada");
+    expect(detail).toHaveTextContent("Pendiente de recepcion");
   });
 });

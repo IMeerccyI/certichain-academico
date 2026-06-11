@@ -8,6 +8,14 @@ describe("hash utilities", () => {
     );
   });
 
+  it("calculates the same digest for a real uploaded file and its text content", async () => {
+    const content = "certichain-real-pdf-content-001";
+    const file = new File([content], "certificado-real.pdf", { type: "application/pdf" });
+    const expected = await calculateSha256(content);
+
+    await expect(calculateSha256(file)).resolves.toBe(expected);
+  });
+
   it("shortens hashes while preserving the leading and trailing fragments", () => {
     expect(shortenHash("0x1234567890abcdef", 6)).toBe("0x1234...abcdef");
   });

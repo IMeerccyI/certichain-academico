@@ -41,21 +41,21 @@ export const routes = [
     id: "dashboard",
     title: "Panel de control",
     shortTitle: "Dashboard",
-    description: "Estado operativo de emision, verificacion y red simulada.",
+    description: "Estado operativo de emision, verificacion y red Ethereum.",
     icon: LayoutDashboard,
   },
   {
     id: "web3",
     title: "Conexion Web3",
     shortTitle: "Web3",
-    description: "Estado de wallet, contrato inteligente y red Ethereum simulada.",
+    description: "Estado de wallet, contrato inteligente y red Ethereum.",
     icon: PlugZap,
   },
   {
     id: "issue",
     title: "Emitir Certificado",
     shortTitle: "Emitir",
-    description: "Flujo de PDF, hash SHA-256, firma institucional y anclaje mock.",
+    description: "Flujo de PDF, hash SHA-256, firma institucional y anclaje on-chain.",
     icon: FileSignature,
   },
   {
@@ -125,7 +125,7 @@ export const routes = [
     id: "settings",
     title: "Configuracion",
     shortTitle: "Ajustes",
-    description: "Preferencias locales de demo y accesibilidad.",
+    description: "Preferencias locales de red, MetaMask y accesibilidad.",
     icon: Settings,
   },
 ] as const satisfies readonly AppRoute[];

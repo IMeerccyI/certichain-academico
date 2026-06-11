@@ -1,11 +1,14 @@
 import { Boxes, CircleUserRound, Settings2 } from "lucide-react";
 import { routes } from "@/app/routes";
 import { cn } from "@/lib/cn";
+import { getRoutesForRole } from "@/lib/roles";
 import { useAppStore } from "@/store/app-store";
 
 export function Sidebar() {
+  const activeRole = useAppStore((state) => state.activeRole);
   const currentRouteId = useAppStore((state) => state.currentRouteId);
   const setRoute = useAppStore((state) => state.setRoute);
+  const visibleRoutes = routes.filter((route) => getRoutesForRole(activeRole).includes(route.id));
   const sidebarExpanded = useAppStore((state) => state.sidebarExpanded);
   const sidebarPinned = useAppStore((state) => state.sidebarPinned);
   const setSidebarExpanded = useAppStore((state) => state.setSidebarExpanded);
@@ -83,7 +86,7 @@ export function Sidebar() {
             sidebarExpanded ? "lg:justify-items-stretch" : "lg:justify-items-center",
           )}
         >
-          {routes.map((route) => {
+          {visibleRoutes.map((route) => {
             const Icon = route.icon;
             const active = currentRouteId === route.id;
 
@@ -124,27 +127,29 @@ export function Sidebar() {
           sidebarExpanded ? "lg:justify-items-stretch" : "lg:justify-items-center",
         )}
       >
-        <button
-          className={cn(
-            "flex h-9 items-center gap-2 rounded-md text-xs font-medium text-muted-foreground transition-all hover:bg-secondary hover:text-foreground",
-            sidebarExpanded
-              ? "w-full justify-start px-3"
-              : "w-9 justify-center px-0",
-          )}
-          onClick={() => setRoute("settings")}
-          title="Configuracion"
-          type="button"
-        >
-          <Settings2 className="h-4 w-4" aria-hidden="true" />
-          <span
+        {visibleRoutes.some((route) => route.id === "settings") ? (
+          <button
             className={cn(
-              "truncate",
-              sidebarExpanded ? "lg:not-sr-only lg:inline" : "lg:sr-only",
+              "flex h-9 items-center gap-2 rounded-md text-xs font-medium text-muted-foreground transition-all hover:bg-secondary hover:text-foreground",
+              sidebarExpanded
+                ? "w-full justify-start px-3"
+                : "w-9 justify-center px-0",
             )}
+            onClick={() => setRoute("settings")}
+            title="Configuracion"
+            type="button"
           >
-            Configuracion
-          </span>
-        </button>
+            <Settings2 className="h-4 w-4" aria-hidden="true" />
+            <span
+              className={cn(
+                "truncate",
+                sidebarExpanded ? "lg:not-sr-only lg:inline" : "lg:sr-only",
+              )}
+            >
+              Configuracion
+            </span>
+          </button>
+        ) : null}
         <span
           className={cn(
             "flex h-9 items-center gap-2 rounded-md text-xs font-medium text-muted-foreground",

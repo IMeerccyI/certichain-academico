@@ -13,6 +13,7 @@ import {
   Fingerprint,
   History,
   Link2,
+  RefreshCw,
   Search,
   ShieldCheck,
 } from "lucide-react";
@@ -25,9 +26,17 @@ import { useReducedMotion } from "@/hooks/useReducedMotion";
 import { cn } from "@/lib/cn";
 import { formatDateTime, numberFormatter } from "@/lib/formatters";
 import { shortenHash } from "@/lib/hash";
+import { flattenCertificateHistorial, type CertificateHistorialEntry } from "@/lib/web3/historial";
 import { setMotionCompleteState, shouldSkipMotion } from "@/lib/motion";
 import { useAppStore } from "@/store/app-store";
-import type { BlockchainEvent, BlockchainEventType, Certificate } from "@/types/domain";
+import type {
+  BlockchainEvent,
+  BlockchainEventType,
+  Certificate,
+  Issuer,
+  Student,
+  VerifierEntity,
+} from "@/types/domain";
 
 type EventTypeFilter = BlockchainEventType | "all";
 type MethodFilter = ContractMethod | "all";
@@ -46,8 +55,53 @@ type LedgerRow = {
   certificate?: Certificate;
   event: BlockchainEvent;
   method: ContractMethod;
+  source: "local" | "onchain";
   statusLabel: "Confirmado" | "Fallido";
 };
+
+function historialEntryToEvent(entry: CertificateHistorialEntry): BlockchainEvent {
+  return {
+    id: entry.id,
+    type: entry.type,
+    actor: entry.actor,
+    actorRole: entry.actorRole,
+    certificateId: entry.certificateId,
+    transactionHash: "consultarHistorial()",
+    txHash: "consultarHistorial()",
+    blockNumber: 0,
+    createdAt: entry.fecha,
+    detail: entry.detalle,
+    nodeId: "onchain",
+  };
+}
+
+function resolveActorLabel(
+  actor: string,
+  issuers: Issuer[],
+  students: Student[],
+  verifierEntities: VerifierEntity[],
+) {
+  const normalized = actor.toLowerCase();
+  const issuer = issuers.find((item) => item.walletAddress?.toLowerCase() === normalized);
+  if (issuer) {
+    return issuer.name;
+  }
+
+  const student = students.find((item) => item.walletAddress?.toLowerCase() === normalized);
+  if (student) {
+    return student.fullName;
+  }
+
+  const verifier = verifierEntities.find((item) => item.walletAddress?.toLowerCase() === normalized);
+  if (verifier) {
+    return verifier.name;
+  }
+
+  return issuers.find((item) => item.id === actor)?.name ??
+    students.find((item) => item.id === actor)?.fullName ??
+    verifierEntities.find((item) => item.id === actor)?.name ??
+    shortenHash(actor, 6);
+}
 
 const eventTypeLabels: Record<BlockchainEventType, string> = {
   certificate_issued: "Certificado emitido",
@@ -102,7 +156,7 @@ function MetricTile({
   value: string;
 }) {
   return (
-    <div className="rounded-md border border-border/60 bg-black/38 p-3">
+    <div className="rounded-md border border-border/60 bg-muted/48 p-3">
       <div className="flex items-center justify-between gap-3">
         <span className="grid h-8 w-8 shrink-0 place-items-center rounded-md border border-border/60 bg-secondary text-muted-foreground">
           {icon}
@@ -125,18 +179,26 @@ function FieldLine({ label, value }: { label: string; value: ReactNode }) {
   );
 }
 
-function eventStatus(event: BlockchainEvent) {
+function eventStatus(event: BlockchainEvent): "Confirmado" | "Fallido" {
   return event.type === "verification_failed" ? "Fallido" : "Confirmado";
 }
 
 export function LedgerPage() {
   const pageRef = useRef<HTMLDivElement>(null);
   const blockchainEvents = useAppStore((state) => state.blockchainEvents);
+  const certificateHistorial = useAppStore((state) => state.certificateHistorial);
   const certificates = useAppStore((state) => state.certificates);
+  const chainConnected = useAppStore((state) => state.chainConnected);
+  const historialSyncing = useAppStore((state) => state.historialSyncing);
   const issuers = useAppStore((state) => state.issuers);
   const students = useAppStore((state) => state.students);
   const verifierEntities = useAppStore((state) => state.verifierEntities);
+  const syncLedgerHistorial = useAppStore((state) => state.syncLedgerHistorial);
   const reducedMotion = useReducedMotion();
+  const onChainEntries = useMemo(
+    () => flattenCertificateHistorial(certificateHistorial),
+    [certificateHistorial],
+  );
   const [typeFilter, setTypeFilter] = useState<EventTypeFilter>("all");
   const [methodFilter, setMethodFilter] = useState<MethodFilter>("all");
   const [actorFilter, setActorFilter] = useState("");
@@ -144,23 +206,40 @@ export function LedgerPage() {
   const [selectedEventId, setSelectedEventId] = useState(blockchainEvents[0]?.id ?? "");
 
   const rows = useMemo<LedgerRow[]>(() => {
-    return blockchainEvents.map((event) => {
+    const localRows = blockchainEvents.map((event) => {
       const certificate = certificates.find((item) => item.id === event.certificateId);
-      const actor =
-        issuers.find((item) => item.id === event.actor)?.name ??
-        students.find((item) => item.id === event.actor)?.fullName ??
-        verifierEntities.find((item) => item.id === event.actor)?.name ??
-        event.actor;
 
       return {
-        actorLabel: actor,
+        actorLabel: resolveActorLabel(event.actor, issuers, students, verifierEntities),
         certificate,
         event,
         method: methodByEventType[event.type],
+        source: "local" as const,
         statusLabel: eventStatus(event),
       };
     });
-  }, [blockchainEvents, certificates, issuers, students, verifierEntities]);
+
+    const chainRows = onChainEntries.map((entry) => {
+      const certificate =
+        certificates.find((item) => item.id === entry.certificateId) ??
+        certificates.find((item) => item.code === entry.codigo);
+      const event = historialEntryToEvent(entry);
+
+      return {
+        actorLabel: resolveActorLabel(entry.actor, issuers, students, verifierEntities),
+        certificate,
+        event,
+        method: (entry.method as ContractMethod) ?? "consultarHistorial()",
+        source: "onchain" as const,
+        statusLabel: "Confirmado" as const,
+      };
+    });
+
+    return [...chainRows, ...localRows].sort(
+      (left, right) =>
+        new Date(right.event.createdAt).getTime() - new Date(left.event.createdAt).getTime(),
+    );
+  }, [blockchainEvents, certificates, issuers, onChainEntries, students, verifierEntities]);
 
   const filteredRows = useMemo(() => {
     const actorQuery = actorFilter.trim().toLowerCase();
@@ -250,24 +329,40 @@ export function LedgerPage() {
           <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
             <div className="min-w-0">
               <div className="mb-3 flex flex-wrap gap-2">
-                <StatusBadge tone="syncing">Eventos reales del store</StatusBadge>
-                <StatusBadge tone="online">Ledger replicado</StatusBadge>
-                <StatusBadge tone="neutral">Contrato academico mock</StatusBadge>
+                <StatusBadge tone={onChainEntries.length ? "online" : "syncing"}>
+                  {onChainEntries.length
+                    ? `${onChainEntries.length} evento(s) on-chain`
+                    : "Historial on-chain pendiente"}
+                </StatusBadge>
+                <StatusBadge tone="neutral">{blockchainEvents.length} evento(s) locales</StatusBadge>
+                <StatusBadge tone={chainConnected ? "online" : "warning"}>
+                  {chainConnected ? "Contrato conectado" : "Lectura RPC"}
+                </StatusBadge>
               </div>
               <h1 className="text-2xl font-semibold tracking-tight text-foreground">
                 Ledger Blockchain
               </h1>
               <p className="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground">
-                Explorador forense de eventos generados por la DApp. Cada fila representa una
-                accion del contrato inteligente mock con hash de transaccion, bloque, actor,
-                metodo y certificado relacionado.
+                Explorador forense que combina eventos locales de la sesion con el historial real
+                del contrato via consultarHistorial(). Sincroniza para leer emision, recepcion,
+                verificacion y revocacion directamente desde Ethereum.
               </p>
+            </div>
+            <div className="flex flex-col gap-2 sm:min-w-[16rem]">
+              <Button
+                disabled={historialSyncing}
+                icon={<RefreshCw className="h-4 w-4" aria-hidden="true" />}
+                onClick={() => void syncLedgerHistorial()}
+                variant="primary"
+              >
+                {historialSyncing ? "Sincronizando..." : "Sincronizar historial on-chain"}
+              </Button>
             </div>
             <div className="grid grid-cols-3 gap-2 sm:min-w-[23rem]">
               <MetricTile
                 icon={<DatabaseZap className="h-4 w-4" aria-hidden="true" />}
                 label="Eventos"
-                value={numberFormatter.format(blockchainEvents.length)}
+                value={numberFormatter.format(rows.length)}
               />
               <MetricTile
                 icon={<Blocks className="h-4 w-4" aria-hidden="true" />}
@@ -330,7 +425,7 @@ export function LedgerPage() {
                       "shrink-0 rounded-md border px-3 py-1.5 text-xs font-semibold transition-colors",
                       typeFilter === type
                         ? "border-primary/35 bg-primary/10 text-primary"
-                        : "border-border/70 bg-black/35 text-muted-foreground hover:bg-secondary hover:text-foreground",
+                        : "border-border/70 bg-muted/45 text-muted-foreground hover:bg-secondary hover:text-foreground",
                     )}
                     key={type}
                     onClick={() => setTypeFilter(type)}
@@ -351,7 +446,7 @@ export function LedgerPage() {
                       "shrink-0 rounded-md border px-3 py-1.5 text-xs font-semibold transition-colors",
                       methodFilter === method
                         ? "border-primary/35 bg-primary/10 text-primary"
-                        : "border-border/70 bg-black/35 text-muted-foreground hover:bg-secondary hover:text-foreground",
+                        : "border-border/70 bg-muted/45 text-muted-foreground hover:bg-secondary hover:text-foreground",
                     )}
                     key={method}
                     onClick={() => setMethodFilter(method)}
@@ -372,12 +467,12 @@ export function LedgerPage() {
                 <Link2 className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
                 <p className="text-sm font-semibold text-foreground">Tabla de eventos</p>
               </div>
-              <StatusBadge tone="syncing">Confirmaciones simuladas</StatusBadge>
+              <StatusBadge tone="syncing">Confirmaciones registradas</StatusBadge>
             </CardHeader>
             <CardContent>
-              <div className="overflow-x-auto rounded-lg border border-border bg-black/30">
+              <div className="overflow-x-auto rounded-lg border border-border bg-muted/40">
                 <table className="w-full min-w-[72rem] text-left text-xs" data-testid="ledger-events-table">
-                  <thead className="bg-black/55 text-muted-foreground">
+                  <thead className="bg-muted/65 text-muted-foreground">
                     <tr>
                       <th className="px-3 py-2 font-medium">ID</th>
                       <th className="px-3 py-2 font-medium">Tipo</th>
@@ -387,6 +482,7 @@ export function LedgerPage() {
                       <th className="px-3 py-2 font-medium">Actor</th>
                       <th className="px-3 py-2 font-medium">Metodo</th>
                       <th className="px-3 py-2 font-medium">Certificado relacionado</th>
+                      <th className="px-3 py-2 font-medium">Origen</th>
                       <th className="px-3 py-2 font-medium">Estado</th>
                       <th className="px-3 py-2 font-medium">Datos resumidos</th>
                       <th className="px-3 py-2 text-right font-medium">Detalle</th>
@@ -430,6 +526,11 @@ export function LedgerPage() {
                             {row.certificate?.code ?? "Sin certificado"}
                           </td>
                           <td className="px-3 py-3">
+                            <StatusBadge tone={row.source === "onchain" ? "online" : "neutral"}>
+                              {row.source === "onchain" ? "On-chain" : "Local"}
+                            </StatusBadge>
+                          </td>
+                          <td className="px-3 py-3">
                             <StatusBadge tone={row.statusLabel === "Confirmado" ? "online" : "warning"}>
                               {row.statusLabel}
                             </StatusBadge>
@@ -469,14 +570,14 @@ export function LedgerPage() {
             <CardContent className="grid gap-3">
               {selectedRow ? (
                 <>
-                  <div className="rounded-md border border-border/55 bg-black/45 p-3">
+                  <div className="rounded-md border border-border/55 bg-muted/55 p-3">
                     <p className="font-mono text-[11px] text-muted-foreground">{selectedRow.event.id}</p>
                     <p className="mt-2 text-sm font-semibold text-foreground">
                       {eventTypeLabels[selectedRow.event.type]}
                     </p>
                     <p className="mt-1 text-xs leading-5 text-muted-foreground">{selectedRow.event.detail}</p>
                   </div>
-                  <div className="grid gap-1 rounded-md border border-border/55 bg-black/35 p-3">
+                  <div className="grid gap-1 rounded-md border border-border/55 bg-muted/45 p-3">
                     <FieldLine label="Tipo" value={selectedRow.event.type} />
                     <FieldLine label="Timestamp" value={formatDateTime(selectedRow.event.createdAt)} />
                     <FieldLine label="Bloque" value={numberFormatter.format(selectedRow.event.blockNumber)} />
@@ -487,12 +588,16 @@ export function LedgerPage() {
                       label="Certificado relacionado"
                       value={selectedRow.certificate?.code ?? "Sin certificado asociado"}
                     />
+                    <FieldLine
+                      label="Origen"
+                      value={selectedRow.source === "onchain" ? "consultarHistorial()" : "Evento local"}
+                    />
                     <FieldLine label="Estado" value={selectedRow.statusLabel} />
                     <FieldLine label="Datos resumidos" value={selectedRow.event.detail} />
                   </div>
                 </>
               ) : (
-                <div className="rounded-md border border-border/55 bg-black/40 p-4 text-sm text-muted-foreground">
+                <div className="rounded-md border border-border/55 bg-muted/50 p-4 text-sm text-muted-foreground">
                   Sin eventos para los filtros seleccionados.
                 </div>
               )}
@@ -512,7 +617,7 @@ export function LedgerPage() {
             <ol className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
               {filteredRows.slice(0, 8).map((row) => (
                 <li
-                  className="rounded-md border border-border/55 bg-black/40 p-3"
+                  className="rounded-md border border-border/55 bg-muted/50 p-3"
                   data-ledger-timeline-item
                   key={row.event.id}
                 >

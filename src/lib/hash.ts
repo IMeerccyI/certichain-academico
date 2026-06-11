@@ -1,10 +1,28 @@
+function isBlobLike(input: unknown): input is Blob {
+  return (
+    typeof input === "object" &&
+    input !== null &&
+    typeof (input as Blob).arrayBuffer === "function"
+  );
+}
+
+function isTextFileLike(input: unknown): input is { text: () => Promise<string> } {
+  return (
+    typeof input === "object" &&
+    input !== null &&
+    typeof (input as { text?: unknown }).text === "function"
+  );
+}
+
 export async function calculateSha256(input: string | ArrayBuffer | Blob) {
   const buffer =
     typeof input === "string"
       ? new TextEncoder().encode(input)
-      : input instanceof Blob
-        ? await input.arrayBuffer()
-        : input;
+      : isBlobLike(input)
+        ? new Uint8Array(await input.arrayBuffer())
+        : isTextFileLike(input)
+          ? new TextEncoder().encode(await input.text())
+          : new Uint8Array(input);
 
   if (!globalThis.crypto?.subtle) {
     return calculateDemoHash(buffer);

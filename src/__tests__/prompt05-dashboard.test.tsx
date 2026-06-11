@@ -8,16 +8,18 @@ import {
   issuers,
   manipulatedDocumentCases,
   verificationAttempts,
-} from "@/data/mock-data";
+} from "@/data/fixture-data";
 import { useAppStore } from "@/store/app-store";
 
 describe("Prompt 05 functional dashboard", () => {
   beforeEach(() => {
     window.localStorage.clear();
     useAppStore.getState().resetDemoData();
+    useAppStore.getState().setActiveRole("academic_admin");
+    useAppStore.getState().setRoute("dashboard");
   });
 
-  it("renders the dashboard as a real operational first screen backed by mock data", () => {
+  it("renders the dashboard as a real operational first screen backed by academic fixtures", () => {
     render(<App />);
 
     expect(
@@ -53,27 +55,24 @@ describe("Prompt 05 functional dashboard", () => {
 
     expect(screen.getByText(/ultimas transacciones/i)).toBeInTheDocument();
     expect(screen.getByText(/ultimos certificados emitidos/i)).toBeInTheDocument();
-    expect(screen.getAllByText(/riesgo documental evitado/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/riesgo documental evitado/i)).toBeInTheDocument();
+    expect(screen.getByText(/flujo academico-blockchain/i)).toBeInTheDocument();
     expect(screen.getByText(/certificados por estado/i)).toBeInTheDocument();
-    expect(screen.getByText(/certificados por facultad/i)).toBeInTheDocument();
     expect(screen.getByText(/actividad mensual/i)).toBeInTheDocument();
-    expect(screen.getByText(/verificaciones por entidad/i)).toBeInTheDocument();
   });
 
   it("shows the academic-blockchain timeline and navigates from quick actions", async () => {
     const user = userEvent.setup();
     render(<App />);
 
-    for (const step of [
-      /generar pdf/i,
-      /calcular sha-256/i,
-      /registrar hash en ethereum/i,
-      /firmar emision/i,
-      /firma de recepcion/i,
-      /replicacion blockchain/i,
-      /verificacion por empresa/i,
-    ]) {
-      expect(screen.getByText(step)).toBeInTheDocument();
+    const dashboard = screen.getByTestId("dashboard-general");
+    const flowSection = within(dashboard)
+      .getByText(/flujo academico-blockchain/i)
+      .closest("section");
+    expect(flowSection).not.toBeNull();
+
+    for (const step of [/pdf \+ sha-256/i, /anclaje ethereum/i, /firma recepcion/i, /verificacion/i]) {
+      expect(within(flowSection as HTMLElement).getByText(step)).toBeInTheDocument();
     }
 
     await user.click(screen.getByRole("button", { name: /acceso rapido: emitir certificado/i }));
@@ -91,11 +90,22 @@ describe("Prompt 05 functional dashboard", () => {
     await user.click(screen.getByRole("button", { name: /acceso rapido: ledger blockchain/i }));
     expect(useAppStore.getState().currentRouteId).toBe("ledger");
 
-    act(() => {
-      useAppStore.getState().setRoute("dashboard");
-    });
-    await user.click(screen.getByRole("button", { name: /acceso rapido: auditoria distribuida/i }));
-    expect(useAppStore.getState().currentRouteId).toBe("audit");
+    expect(
+      screen.queryByRole("button", { name: /acceso rapido: auditoria distribuida/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("hides issuer quick actions for student role", () => {
+    useAppStore.getState().setActiveRole("student");
+    useAppStore.getState().setRoute("dashboard");
+    render(<App />);
+
+    expect(
+      screen.queryByRole("button", { name: /acceso rapido: emitir certificado/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /acceso rapido: verificar certificado/i }),
+    ).toBeInTheDocument();
   });
 
   it("keeps the dashboard available when a legacy browser state has no ledger events", () => {

@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it } from "vitest";
 import App from "@/app/App";
@@ -6,6 +6,7 @@ import { useAppStore } from "@/store/app-store";
 
 describe("Prompt 10 revocation flow", () => {
   beforeEach(() => {
+    Reflect.deleteProperty(window, "ethereum");
     window.localStorage.clear();
     useAppStore.getState().resetDemoData();
     useAppStore.getState().setActiveRole("authorized_issuer");
@@ -36,31 +37,31 @@ describe("Prompt 10 revocation flow", () => {
     expect(within(page).getByLabelText(/confirmo la revocacion/i)).toBeInTheDocument();
     expect(within(page).getByRole("button", { name: /^revocar$/i })).toBeInTheDocument();
     expect(within(page).getByText(/timeline de revocacion/i)).toBeInTheDocument();
+    expect(within(page).queryByText(/mock/i)).not.toBeInTheDocument();
   });
 
   it("blocks incorrect role, empty reason and already revoked certificates", async () => {
     const user = userEvent.setup();
     useAppStore.getState().setActiveRole("student");
-    const firstRender = render(<App />);
+    const studentView = render(<App />);
 
-    let page = screen.getByTestId("revocation-workspace");
-    await user.type(within(page).getByLabelText(/buscar certificado por codigo/i), "CERT-2026-0001");
-    await user.click(within(page).getByRole("button", { name: /buscar certificado/i }));
-    await user.type(within(page).getByLabelText(/motivo de revocacion/i), "Error administrativo");
-    await user.click(within(page).getByLabelText(/confirmo la revocacion/i));
-    await user.click(within(page).getByRole("button", { name: /^revocar$/i }));
+    expect(useAppStore.getState().currentRouteId).toBe("students");
+    expect(screen.queryByTestId("revocation-workspace")).not.toBeInTheDocument();
 
-    expect(within(page).getByText(/permiso insuficiente/i)).toBeInTheDocument();
+    const blockedRevoke = await useAppStore
+      .getState()
+      .revokeCertificate("certificate-001", "Error administrativo");
+    expect(blockedRevoke).toBeUndefined();
     expect(useAppStore.getState().certificates.find((item) => item.code === "CERT-2026-0001")?.status).toBe(
       "valid",
     );
 
-    firstRender.unmount();
+    studentView.unmount();
     useAppStore.getState().setActiveRole("authorized_issuer");
     useAppStore.getState().setRoute("revocation");
     render(<App />);
 
-    ({ page } = await searchCertificate("CERT-2026-0001"));
+    let { page } = await searchCertificate("CERT-2026-0001");
     await user.click(within(page).getByLabelText(/confirmo la revocacion/i));
     await user.click(within(page).getByRole("button", { name: /^revocar$/i }));
     expect(within(page).getByText(/motivo requerido/i)).toBeInTheDocument();
@@ -72,7 +73,7 @@ describe("Prompt 10 revocation flow", () => {
     expect(within(page).getByText(/certificado ya revocado/i)).toBeInTheDocument();
   });
 
-  it("revokes a valid certificate with confirmation, transaction result and ledger trace", async () => {
+  it("does not revoke or create a fake transaction when the contract is not connected", async () => {
     const user = userEvent.setup();
     render(<App />);
     const beforeRevoked = useAppStore
@@ -87,27 +88,19 @@ describe("Prompt 10 revocation flow", () => {
     await user.click(within(page).getByLabelText(/confirmo la revocacion/i));
     await user.click(within(page).getByRole("button", { name: /^revocar$/i }));
 
-    const modal = await screen.findByRole("dialog", { name: /advertencia de revocacion/i });
-    expect(within(modal).getByText(/esta accion no elimina el certificado/i)).toBeInTheDocument();
-    await user.click(within(modal).getByRole("button", { name: /firmar y enviar revocacion/i }));
-
-    await waitFor(() => {
-      expect(within(page).getByText(/transaccion mock confirmada/i)).toBeInTheDocument();
-    });
-
     const state = useAppStore.getState();
-    const revokedCertificate = state.certificates.find((item) => item.code === "CERT-2026-0001");
-    expect(revokedCertificate?.status).toBe("revoked");
+    const certificate = state.certificates.find((item) => item.code === "CERT-2026-0001");
+    expect(within(page).getByText(/contrato no conectado/i)).toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: /advertencia de revocacion/i })).not.toBeInTheDocument();
+    expect(certificate?.status).toBe("valid");
     expect(state.certificates.filter((certificate) => certificate.status === "revoked")).toHaveLength(
-      beforeRevoked + 1,
+      beforeRevoked,
     );
-    expect(state.revocationRecords.some((record) => record.certificateId === revokedCertificate?.id)).toBe(true);
-    expect(state.blockchainEvents[0]).toMatchObject({
-      certificateId: revokedCertificate?.id,
+    expect(state.revocationRecords.some((record) => record.certificateId === certificate?.id)).toBe(false);
+    expect(state.blockchainEvents[0]).not.toMatchObject({
+      certificateId: certificate?.id,
       type: "certificate_revoked",
     });
-    expect(state.verifyCertificateByCode("CERT-2026-0001").status).toBe("revoked");
-    expect(within(page).getAllByText(/certificate_revoked/i).length).toBeGreaterThan(0);
-    expect(within(page).getAllByText(/bloque confirmado/i).length).toBeGreaterThan(0);
+    expect(within(page).queryByText(/transaccion mock confirmada/i)).not.toBeInTheDocument();
   });
 });

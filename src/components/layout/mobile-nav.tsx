@@ -1,10 +1,13 @@
 import { routes } from "@/app/routes";
 import { cn } from "@/lib/cn";
+import { getRoutesForRole } from "@/lib/roles";
 import { useAppStore } from "@/store/app-store";
 
 export function MobileNav() {
+  const activeRole = useAppStore((state) => state.activeRole);
   const currentRouteId = useAppStore((state) => state.currentRouteId);
   const setRoute = useAppStore((state) => state.setRoute);
+  const visibleRoutes = routes.filter((route) => getRoutesForRole(activeRole).includes(route.id));
 
   return (
     <nav
@@ -12,7 +15,7 @@ export function MobileNav() {
       className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-background/95 px-2 py-2 backdrop-blur lg:hidden"
     >
       <div className="flex gap-2 overflow-x-auto pb-1">
-        {routes.map((route) => {
+        {visibleRoutes.map((route) => {
           const Icon = route.icon;
           const active = currentRouteId === route.id;
 

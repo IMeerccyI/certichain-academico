@@ -1,18 +1,23 @@
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it } from "vitest";
-import App from "@/app/App";
+import { AppProviders } from "@/app/providers";
+import { AnalyticsPage } from "@/features/analytics/AnalyticsPage";
 import { useAppStore } from "@/store/app-store";
 
 describe("Prompt 13 system analytics", () => {
   beforeEach(() => {
     window.localStorage.clear();
     useAppStore.getState().resetDemoData();
-    useAppStore.getState().setRoute("analytics");
+    useAppStore.getState().setActiveRole("academic_admin");
   });
 
-  it("renders analytics metrics, chart panels and summary data from mock records", () => {
-    render(<App />);
+  it("renders analytics metrics, chart panels and summary data from fixture records", () => {
+    render(
+      <AppProviders>
+        <AnalyticsPage />
+      </AppProviders>,
+    );
 
     const page = screen.getByTestId("analytics-workspace");
     expect(within(page).getByRole("heading", { name: /analitica del sistema/i })).toBeInTheDocument();
@@ -58,9 +63,13 @@ describe("Prompt 13 system analytics", () => {
     expect(within(summary).getAllByText("3").length).toBeGreaterThan(0);
   });
 
-  it("updates analytics when filters change and exports a simulated report", async () => {
+  it("updates analytics when filters change and exports a local report", async () => {
     const user = userEvent.setup();
-    render(<App />);
+    render(
+      <AppProviders>
+        <AnalyticsPage />
+      </AppProviders>,
+    );
 
     const page = screen.getByTestId("analytics-workspace");
 
@@ -78,11 +87,14 @@ describe("Prompt 13 system analytics", () => {
     expect(within(page).getByTestId("metric-revoked-certificates")).toHaveTextContent("4");
 
     await user.click(within(page).getByRole("button", { name: /ultimos 3 meses/i }));
-    expect(within(page).getByTestId("chart-monthly-activity")).toHaveTextContent("Oct");
-    expect(within(page).getByTestId("chart-monthly-activity")).not.toHaveTextContent("Ene");
+    expect(within(page).getByTestId("chart-monthly-activity")).toHaveTextContent("Jun");
+    expect(within(page).getByTestId("chart-monthly-activity")).not.toHaveTextContent("Feb");
 
-    await user.click(within(page).getByRole("button", { name: /exportar reporte simulado/i }));
-    expect(within(page).getByTestId("analytics-export-result")).toHaveTextContent("Reporte simulado generado");
+    await user.click(within(page).getByRole("button", { name: /exportar reporte local/i }));
+    expect(within(page).getByTestId("analytics-export-result")).toHaveTextContent("Reporte local generado");
+    expect(within(page).getByTestId("analytics-export-result")).toHaveTextContent(
+      "datos actuales y fixtures academicos",
+    );
     expect(within(page).getByTestId("analytics-export-result")).toHaveTextContent("Ultimos 3 meses");
     expect(within(page).getByTestId("analytics-export-result")).toHaveTextContent("Revocados");
   });

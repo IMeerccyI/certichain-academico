@@ -21,6 +21,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
+import { canManageIssuers as roleCanManageIssuers } from "@/lib/ui-permissions";
 import { cn } from "@/lib/cn";
 import { formatDateTime, numberFormatter } from "@/lib/formatters";
 import { shortenHash } from "@/lib/hash";
@@ -83,7 +84,7 @@ function MetricTile({
   value: string;
 }) {
   return (
-    <div className="rounded-md border border-border/60 bg-black/38 p-3">
+    <div className="rounded-md border border-border/60 bg-muted/48 p-3">
       <div className="flex items-center justify-between gap-3">
         <span className="grid h-8 w-8 shrink-0 place-items-center rounded-md border border-border/60 bg-secondary text-muted-foreground">
           {icon}
@@ -145,6 +146,7 @@ export function IssuersPage() {
   const verifierEntities = useAppStore((state) => state.verifierEntities);
   const activeRole = useAppStore((state) => state.activeRole);
   const authorizeIssuer = useAppStore((state) => state.authorizeIssuer);
+  const chainConnected = useAppStore((state) => state.chainConnected);
   const deactivateIssuer = useAppStore((state) => state.deactivateIssuer);
   const addToast = useAppStore((state) => state.addToast);
   const reducedMotion = useReducedMotion();
@@ -202,7 +204,7 @@ export function IssuersPage() {
   const selectedVerifier =
     verifierViews.find((item) => item.entity.id === selectedVerifierId) ?? verifierViews[0];
   const activeIssuers = issuerViews.filter((item) => item.issuer.active).length;
-  const canManageIssuers = activeRole === "academic_admin";
+  const canManageIssuers = roleCanManageIssuers(activeRole);
 
   useGSAP(
     () => {
@@ -284,7 +286,9 @@ export function IssuersPage() {
           <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
             <div className="min-w-0">
               <div className="mb-3 flex flex-wrap gap-2">
-                <StatusBadge tone="syncing">Smart contract mock</StatusBadge>
+                <StatusBadge tone={chainConnected ? "online" : "warning"}>
+                  {chainConnected ? "Contrato conectado" : "Contrato requerido"}
+                </StatusBadge>
                 <StatusBadge tone={canManageIssuers ? "online" : "warning"}>
                   {canManageIssuers ? "Administrador activo" : "Solo lectura"}
                 </StatusBadge>
@@ -356,13 +360,13 @@ export function IssuersPage() {
                   <StatusBadge tone="neutral">{numberFormatter.format(issuerViews.length)} emisores</StatusBadge>
                 </CardHeader>
                 <CardContent>
-                  <div className="overflow-x-auto rounded-lg border border-border bg-black/30">
+                  <div className="overflow-x-auto rounded-lg border border-border bg-muted/40">
                     <table className="w-full min-w-[58rem] text-left text-xs" data-testid="issuers-table">
-                      <thead className="bg-black/55 text-muted-foreground">
+                      <thead className="bg-muted/65 text-muted-foreground">
                         <tr>
                           <th className="px-3 py-2 font-medium">Nombre</th>
                           <th className="px-3 py-2 font-medium">Cargo</th>
-                          <th className="px-3 py-2 font-medium">Wallet simulada</th>
+                          <th className="px-3 py-2 font-medium">Wallet institucional</th>
                           <th className="px-3 py-2 font-medium">Estado</th>
                           <th className="px-3 py-2 font-medium">Permisos</th>
                           <th className="px-3 py-2 text-right font-medium">Emitidos</th>
@@ -400,7 +404,7 @@ export function IssuersPage() {
                               <div className="flex max-w-[16rem] flex-wrap gap-1.5">
                                 {item.permissions.map((permission) => (
                                   <span
-                                    className="rounded-md border border-border/65 bg-black/35 px-2 py-1 text-[11px] font-semibold text-muted-foreground"
+                                    className="rounded-md border border-border/65 bg-muted/45 px-2 py-1 text-[11px] font-semibold text-muted-foreground"
                                     key={permission}
                                   >
                                     {permission}
@@ -413,16 +417,18 @@ export function IssuersPage() {
                             <td className="px-3 py-3">{formatDateTime(item.lastActivity)}</td>
                             <td className="px-3 py-3">
                               <div className="flex justify-end gap-2">
-                                <Button
-                                  className="min-h-7 px-2 py-1"
-                                  onClick={(event) => {
-                                    event.stopPropagation();
-                                    manageIssuer(item.issuer);
-                                  }}
-                                  variant={item.issuer.active ? "danger" : "secondary"}
-                                >
-                                  {item.issuer.active ? "Desactivar emisor" : "Activar emisor"}
-                                </Button>
+                                {canManageIssuers ? (
+                                  <Button
+                                    className="min-h-7 px-2 py-1"
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      manageIssuer(item.issuer);
+                                    }}
+                                    variant={item.issuer.active ? "danger" : "secondary"}
+                                  >
+                                    {item.issuer.active ? "Desactivar emisor" : "Activar emisor"}
+                                  </Button>
+                                ) : null}
                                 <Button
                                   className="min-h-7 px-2 py-1"
                                   onClick={(event) => {
@@ -456,7 +462,7 @@ export function IssuersPage() {
                 <CardContent className="grid gap-3">
                   {selectedIssuer ? (
                     <>
-                      <div className="rounded-md border border-border/55 bg-black/45 p-3">
+                      <div className="rounded-md border border-border/55 bg-muted/55 p-3">
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">
                             <p className="text-sm font-semibold text-foreground">{selectedIssuer.issuer.name}</p>
@@ -486,7 +492,7 @@ export function IssuersPage() {
                             return (
                               <div
                                 className={cn(
-                                  "flex items-center gap-2 rounded-md border border-border/55 bg-black/35 p-3",
+                                  "flex items-center gap-2 rounded-md border border-border/55 bg-muted/45 p-3",
                                   granted && "border-primary/25 bg-primary/10",
                                 )}
                                 key={permission}
@@ -507,7 +513,7 @@ export function IssuersPage() {
                         <p className="text-xs font-semibold text-foreground">Actividad reciente</p>
                         <ol className="grid gap-2">
                           {selectedIssuer.events.slice(0, 4).map((event) => (
-                            <li className="rounded-md border border-border/55 bg-black/35 p-3" key={event.id}>
+                            <li className="rounded-md border border-border/55 bg-muted/45 p-3" key={event.id}>
                               <div className="flex items-center justify-between gap-3">
                                 <span className="font-mono text-[11px] text-muted-foreground">
                                   #{numberFormatter.format(event.blockNumber)}
@@ -537,15 +543,15 @@ export function IssuersPage() {
                   <div>
                     <p className="text-sm font-semibold text-foreground">Lista de entidades</p>
                     <p className="mt-1 text-xs text-muted-foreground">
-                      Consultas externas tomadas desde el historial mock de verificaciones.
+                      Consultas externas tomadas desde el historial de verificaciones academicas.
                     </p>
                   </div>
                   <StatusBadge tone="neutral">{numberFormatter.format(verifierViews.length)} entidades</StatusBadge>
                 </CardHeader>
                 <CardContent>
-                  <div className="overflow-x-auto rounded-lg border border-border bg-black/30">
+                  <div className="overflow-x-auto rounded-lg border border-border bg-muted/40">
                     <table className="w-full min-w-[52rem] text-left text-xs">
-                      <thead className="bg-black/55 text-muted-foreground">
+                      <thead className="bg-muted/65 text-muted-foreground">
                         <tr>
                           <th className="px-3 py-2 font-medium">Entidad</th>
                           <th className="px-3 py-2 font-medium">Tipo de entidad</th>
@@ -603,7 +609,7 @@ export function IssuersPage() {
                 <CardContent className="grid gap-3">
                   {selectedVerifier ? (
                     <>
-                      <div className="rounded-md border border-border/55 bg-black/45 p-3">
+                      <div className="rounded-md border border-border/55 bg-muted/55 p-3">
                         <FieldLine label="Entidad" value={selectedVerifier.entity.name} />
                         <FieldLine label="Tipo" value={entityTypeLabels[selectedVerifier.entity.type]} />
                         <FieldLine label="Contacto" value={selectedVerifier.entity.contact} />
@@ -612,7 +618,7 @@ export function IssuersPage() {
                       </div>
                       <ol className="grid gap-2">
                         {selectedVerifier.attempts.map((attempt) => (
-                          <li className="rounded-md border border-border/55 bg-black/35 p-3" key={attempt.id}>
+                          <li className="rounded-md border border-border/55 bg-muted/45 p-3" key={attempt.id}>
                             <div className="flex items-center justify-between gap-3">
                               <span className="font-mono text-[11px] text-muted-foreground">
                                 {attempt.certificateCode ?? "Hash directo"}
@@ -644,7 +650,7 @@ export function IssuersPage() {
             <UserCheck className="h-4 w-4 text-primary" aria-hidden="true" />
             <p className="mt-2 text-xs font-semibold text-foreground">Autorizacion</p>
             <p className="mt-1 text-[11px] leading-5 text-muted-foreground">
-              Solo wallets activas pueden firmar operaciones del contrato mock.
+              Solo wallets activas pueden firmar operaciones del contrato desplegado.
             </p>
           </div>
           <div className="rounded-lg border border-border bg-card/95 p-3">
@@ -665,7 +671,7 @@ export function IssuersPage() {
             <Activity className="h-4 w-4 text-primary" aria-hidden="true" />
             <p className="mt-2 text-xs font-semibold text-foreground">Trazabilidad</p>
             <p className="mt-1 text-[11px] leading-5 text-muted-foreground">
-              Cada cambio agrega un evento auditable en el ledger simulado.
+              Cada cambio confirmado por MetaMask agrega un evento auditable al ledger.
             </p>
           </div>
         </section>

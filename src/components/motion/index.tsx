@@ -177,6 +177,7 @@ export function RouteTransitionBoundary({
   ...props
 }: RouteTransitionBoundaryProps) {
   const scope = useRef<HTMLElement>(null);
+  const previousRouteKey = useRef<string | null>(null);
   const reducedMotion = useReducedMotion();
   const Component = as as ElementType;
 
@@ -190,6 +191,16 @@ export function RouteTransitionBoundary({
 
       if (shouldSkipMotion(reducedMotion)) {
         setMotionCompleteState(target);
+        previousRouteKey.current = routeKey;
+        return;
+      }
+
+      const isInitialRoute = previousRouteKey.current === null;
+      const routeChanged = previousRouteKey.current !== null && previousRouteKey.current !== routeKey;
+      previousRouteKey.current = routeKey;
+
+      if (isInitialRoute) {
+        setMotionCompleteState(target);
         return;
       }
 
@@ -197,19 +208,23 @@ export function RouteTransitionBoundary({
         defaults: { duration: 0.3, ease: "power2.out" },
       });
 
-      timeline
-        .addLabel("pageExit")
-        .set(target, { autoAlpha: 0, y: motionPresets.pageEnter.from.y })
-        .addLabel("pageEnter")
-        .to(target, {
-          autoAlpha: 1,
-          clearProps: "transform,visibility,opacity",
-          duration: motionPresets.pageEnter.to.duration,
-          ease: motionPresets.pageEnter.to.ease,
-          y: 0,
-        }, "pageEnter");
+      if (routeChanged) {
+        timeline.set(target, { autoAlpha: 0, y: motionPresets.pageEnter.from.y });
+      }
+
+      timeline.to(target, {
+        autoAlpha: 1,
+        clearProps: "transform,visibility,opacity",
+        duration: motionPresets.pageEnter.to.duration,
+        ease: motionPresets.pageEnter.to.ease,
+        y: 0,
+      });
+
+      return () => {
+        setMotionCompleteState(target);
+      };
     },
-    { dependencies: [routeKey, reducedMotion], revertOnUpdate: true, scope },
+    { dependencies: [routeKey, reducedMotion], scope },
   );
 
   return (

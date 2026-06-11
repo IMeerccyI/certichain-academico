@@ -111,9 +111,9 @@ export const dashboardMetrics = {
 export const moduleSnapshots = {
   web3: {
     title: "Conexion Web3",
-    description: "Estado operativo de wallet, contrato academico y red Ethereum simulada.",
-    primaryMetric: "Sepolia mock",
-    secondaryMetric: "Contrato listo para demo",
+    description: "Estado operativo de wallet, contrato academico y red Ethereum.",
+    primaryMetric: "Sepolia",
+    secondaryMetric: "Contrato segun deployment",
   },
   issue: {
     title: "Emitir certificado",
@@ -153,7 +153,7 @@ export const moduleSnapshots = {
   },
   ledger: {
     title: "Ledger",
-    description: "Eventos replicados entre nodos academicos simulados.",
+    description: "Eventos replicados entre nodos academicos.",
     primaryMetric: `${blockchainEvents.length} eventos`,
     secondaryMetric: `Bloque ${Math.max(...certificates.map((item) => item.blockNumber))}`,
   },
@@ -167,7 +167,7 @@ export const moduleSnapshots = {
     title: "Analitica",
     description: "Lectura operativa de emision, validacion y riesgo.",
     primaryMetric: `${monthlyActivity.at(-1)?.verified ?? 0} verificaciones`,
-    secondaryMetric: "Serie mensual mock",
+    secondaryMetric: "Serie mensual academica",
   },
   nft: {
     title: "NFT academico",
@@ -177,8 +177,8 @@ export const moduleSnapshots = {
   },
   settings: {
     title: "Configuracion",
-    description: "Preferencias locales para demo, red y accesibilidad.",
-    primaryMetric: "Modo demo",
-    secondaryMetric: "Sin conexion real a Ethereum",
+    description: "Preferencias locales para red, MetaMask y accesibilidad.",
+    primaryMetric: "Datos precargados",
+    secondaryMetric: "Contrato configurable",
   },
 } as const;

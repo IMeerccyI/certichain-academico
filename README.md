@@ -56,6 +56,17 @@ Esto reduce costo de gas, evita exponer documentos privados y mantiene una prueb
 
 La fuente de verdad operacional es el smart contract desplegado. El frontend puede incluir pocos fixtures para precargar formularios y mostrar casos de demostracion inicial, pero esos fixtures no sustituyen la consulta on-chain ni autorizan certificados. Para la entrega, las operaciones de emision, verificacion, revocacion, historial, emisores, recepcion y NFT deben demostrarse contra el contrato.
 
+### Como se consultan certificados sin base de datos
+
+La universidad no necesita una base de datos propia para demostrar la practica porque puede leer el contrato:
+
+- `listarCertificados` permite reconstruir el listado de certificados emitidos.
+- `consultarPorCodigo` recupera un certificado especifico.
+- `consultarHistorial` y los eventos del contrato muestran emision, recepcion, verificacion y revocacion.
+- `listarEmisores` muestra wallets autorizadas.
+
+Si se quisiera un padron completo de estudiantes antes de emitir certificados, o busquedas masivas con filtros avanzados, eso perteneceria a un sistema academico externo o a un indexador productivo. No es requisito del flujo descentralizado pedido por la practica.
+
 ## Estructura del repositorio
 
 ```text
@@ -256,4 +267,3 @@ Para Hardhat y Ganache se importan cuentas de prueba generadas por el nodo local
 | Error de permisos | Cuenta sin rol de emisor/admin | Autorizar la cuenta con `autorizarEmisor` usando el administrador. |
 | Hash no coincide | El PDF fue modificado o no es el mismo archivo | Volver a calcular SHA-256 del PDF original y verificar de nuevo. |
 | Codigo duplicado | Ya existe un certificado con el mismo codigo | Usar un codigo institucional unico. |
-

@@ -2,7 +2,6 @@ import { useRef } from "react";
 import type { ComponentType, CSSProperties } from "react";
 import { useGSAP } from "@gsap/react";
 import { gsap } from "gsap";
-import { ContextPanel } from "@/components/layout/context-panel";
 import { MobileNav } from "@/components/layout/mobile-nav";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Topbar } from "@/components/layout/topbar";
@@ -53,29 +52,51 @@ export function AppShell() {
 
   useGSAP(
     () => {
+      const motionTargets = "[data-shell-sidebar], [data-shell-topbar], [data-layout-reveal]";
+
       if (!shellRef.current) {
         return;
       }
 
       if (shouldSkipMotion(reducedMotion)) {
-        setMotionCompleteState("[data-shell-sidebar], [data-shell-topbar], [data-layout-reveal]");
+        setMotionCompleteState(motionTargets);
         return;
       }
 
       const timeline = gsap.timeline({ defaults: { duration: 0.34, ease: "power2.out" } });
 
       timeline
-        .from("[data-shell-sidebar]", { autoAlpha: 0, clearProps: "transform,visibility,opacity", x: -14 })
+        .from("[data-shell-sidebar]", {
+          autoAlpha: 0,
+          clearProps: "transform,visibility,opacity",
+          immediateRender: false,
+          x: -14,
+        })
         .from(
           "[data-shell-topbar]",
-          { autoAlpha: 0, clearProps: "transform,visibility,opacity", y: -10 },
+          {
+            autoAlpha: 0,
+            clearProps: "transform,visibility,opacity",
+            immediateRender: false,
+            y: -10,
+          },
           "<0.05",
         )
         .from(
           "[data-layout-reveal]",
-          { autoAlpha: 0, clearProps: "transform,visibility,opacity", y: 12, stagger: 0.055 },
+          {
+            autoAlpha: 0,
+            clearProps: "transform,visibility,opacity",
+            immediateRender: false,
+            y: 12,
+            stagger: 0.055,
+          },
           "-=0.12",
         );
+
+      return () => {
+        setMotionCompleteState(motionTargets);
+      };
     },
     { dependencies: [reducedMotion], scope: shellRef },
   );
@@ -91,7 +112,7 @@ export function AppShell() {
         <div data-shell-topbar>
           <Topbar />
         </div>
-        <div className="mx-auto grid w-full max-w-[112rem] gap-3 px-3 py-3 md:px-4 lg:grid-cols-[minmax(0,1fr)_16rem] lg:px-4 2xl:grid-cols-[minmax(0,1fr)_18rem] 2xl:px-5">
+        <div className="mx-auto w-full max-w-[112rem] px-3 py-3 md:px-4 lg:px-4 2xl:px-5">
           <RouteTransitionBoundary
             as="main"
             className="min-w-0"
@@ -100,7 +121,6 @@ export function AppShell() {
           >
             <ActiveRoute />
           </RouteTransitionBoundary>
-          <ContextPanel />
         </div>
       </div>
       <MobileNav />

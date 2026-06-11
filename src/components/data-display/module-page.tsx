@@ -7,7 +7,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Progress } from "@/components/ui/progress";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { Tabs } from "@/components/ui/tabs";
-import { ledgerEvents, moduleSnapshots } from "@/data/mock-data";
+import { ledgerEvents, moduleSnapshots } from "@/data/fixture-data";
 import type { RouteId } from "@/app/routes";
 import { formatDateTime } from "@/lib/formatters";
 
@@ -27,12 +27,12 @@ export function ModulePage({ routeId }: ModulePageProps) {
           eyebrow={
             <>
               <Badge intent="info">Modulo activo</Badge>
-              <StatusBadge tone="online">Mock chain</StatusBadge>
+              <StatusBadge tone="online">DApp Ethereum</StatusBadge>
             </>
           }
           title={snapshot.title}
           action={
-            <div className="rounded-md border border-border/55 bg-black/45 p-3">
+            <div className="rounded-md border border-border/55 bg-muted/55 p-3">
               <p className="text-xs font-bold uppercase tracking-[0.14em] text-muted-foreground">
                 Lectura del sistema
               </p>
@@ -50,11 +50,11 @@ export function ModulePage({ routeId }: ModulePageProps) {
             <p className="text-sm font-semibold text-foreground">Contexto operativo</p>
             <p className="mt-2 text-sm leading-6 text-muted-foreground">
               Los registros comparten hash, firma, wallet y eventos de ledger para
-              mantener una lectura consistente durante la simulacion distribuida.
+              mantener una lectura consistente durante la operacion distribuida.
             </p>
             <Progress className="mt-4" value={76} />
           </div>
-          <div className="rounded-md border border-border/55 bg-black/45 p-4">
+          <div className="rounded-md border border-border/55 bg-muted/55 p-4">
             <p className="text-xs font-bold uppercase tracking-[0.14em] text-muted-foreground">
               Estado
             </p>
@@ -119,7 +119,7 @@ export function ModulePage({ routeId }: ModulePageProps) {
               {
                 content: (
                   <EmptyState
-                    description="Los datos mock disponibles no registran alertas bloqueantes para esta vista en la sesion actual."
+                    description="Los datos disponibles no registran alertas bloqueantes para esta vista en la sesion actual."
                     title="Sin bloqueos activos"
                   />
                 ),

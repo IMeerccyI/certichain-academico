@@ -13,6 +13,11 @@ export type WalletState = {
   connected: boolean;
   address: string;
   balanceEth: number;
+  chainId?: number;
+  contractAddress?: string;
+  isContractReady?: boolean;
+  isSupportedNetwork?: boolean;
+  lastError?: string;
   network: NetworkType;
 };
 
@@ -156,7 +161,7 @@ export type WalletTransaction = {
   createdAt: string;
 };
 
-export type VerificationSource = "code" | "hash" | "pdf_mock";
+export type VerificationSource = "code" | "hash" | "pdf";
 
 export type VerificationAttempt = {
   id: string;
@@ -242,7 +247,9 @@ export type CertificateIssueInput = {
   issuerId: string;
   observations: string;
   pdfName: string;
+  pdfFile?: Blob;
   studentId: string;
+  studentWallet?: string;
   university: string;
 };
 
@@ -252,8 +259,15 @@ export type VerificationResult = {
   status: CertificateStatus;
 };
 
+export type ActivePersona = {
+  issuerId?: string;
+  studentId?: string;
+  verifierId?: string;
+};
+
 export type ExportedAppState = {
   activeRole: Role;
+  activePersona?: ActivePersona;
   activeRoute: RouteId;
   blockchainEvents: BlockchainEvent[];
   certificates: Certificate[];

@@ -25,7 +25,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { StatusBadge } from "@/components/ui/status-badge";
-import { chainNodes } from "@/data/mock-data";
+import { chainNodes } from "@/data/fixture-data";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
 import { cn } from "@/lib/cn";
 import { formatDateTime, numberFormatter } from "@/lib/formatters";
@@ -33,7 +33,7 @@ import { shortenHash } from "@/lib/hash";
 import { setMotionCompleteState, shouldSkipMotion } from "@/lib/motion";
 import { useAppStore } from "@/store/app-store";
 
-type SimulationMode = "idle" | "failure" | "consensus" | "replication" | "immutability";
+type ScenarioMode = "idle" | "failure" | "consensus" | "replication" | "immutability";
 
 type NetworkNodeView = {
   description: string;
@@ -89,7 +89,7 @@ function MetricTile({
   value: string;
 }) {
   return (
-    <div className="rounded-md border border-border/60 bg-black/38 p-3">
+    <div className="rounded-md border border-border/60 bg-muted/48 p-3">
       <div className="flex items-center justify-between gap-3">
         <span className="grid h-8 w-8 shrink-0 place-items-center rounded-md border border-border/60 bg-secondary text-muted-foreground">
           {icon}
@@ -123,7 +123,7 @@ export function AuditPage() {
   const certificates = useAppStore((state) => state.certificates);
   const verificationAttempts = useAppStore((state) => state.verificationAttempts);
   const reducedMotion = useReducedMotion();
-  const [mode, setMode] = useState<SimulationMode>("idle");
+  const [mode, setMode] = useState<ScenarioMode>("idle");
   const [issuerOffline, setIssuerOffline] = useState(false);
   const [replicationStep, setReplicationStep] = useState(0);
   const [consensusStep, setConsensusStep] = useState(0);
@@ -229,22 +229,22 @@ export function AuditPage() {
     { dependencies: [mode, reducedMotion, replicationStep, consensusStep, immutabilityLocked], revertOnUpdate: true, scope: pageRef },
   );
 
-  const simulateFailure = () => {
+  const runFailureScenario = () => {
     setMode("failure");
     setIssuerOffline((current) => !current);
   };
 
-  const simulateConsensus = () => {
+  const runConsensusScenario = () => {
     setMode("consensus");
     setConsensusStep((current) => current + 1);
   };
 
-  const simulateReplication = () => {
+  const runReplicationScenario = () => {
     setMode("replication");
     setReplicationStep((current) => current + 1);
   };
 
-  const simulateImmutability = () => {
+  const runImmutabilityScenario = () => {
     setMode("immutability");
     setImmutabilityLocked(true);
   };
@@ -265,7 +265,7 @@ export function AuditPage() {
               <div className="mb-3 flex flex-wrap gap-2">
                 <StatusBadge tone="syncing">Sistemas distribuidos</StatusBadge>
                 <StatusBadge tone={issuerOffline ? "warning" : "online"}>
-                  {issuerOffline ? "Caida simulada" : "Red operativa"}
+                  {issuerOffline ? "Universidad fuera de linea" : "Red operativa"}
                 </StatusBadge>
                 <StatusBadge tone="neutral">Auditoria visual</StatusBadge>
               </div>
@@ -273,7 +273,7 @@ export function AuditPage() {
                 Auditoria Distribuida
               </h1>
               <p className="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground">
-                Simula como la universidad emisora, la blockchain, el estudiante y una entidad
+                Muestra como la universidad emisora, la blockchain, el estudiante y una entidad
                 verificadora comparten evidencia. La vista muestra por que la verificacion continua
                 aunque un actor quede fuera de linea.
               </p>
@@ -311,7 +311,7 @@ export function AuditPage() {
             </CardHeader>
             <CardContent>
               <div
-                className="relative grid gap-3 rounded-lg border border-border/55 bg-black/45 p-3 md:grid-cols-2"
+                className="relative grid gap-3 rounded-lg border border-border/55 bg-muted/55 p-3 md:grid-cols-2"
                 data-testid="distributed-network"
               >
                 <div
@@ -349,40 +349,40 @@ export function AuditPage() {
             <CardHeader className="flex flex-row items-center justify-between gap-3">
               <div className="flex items-center gap-2">
                 <Zap className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
-                <p className="text-sm font-semibold text-foreground">Simulaciones</p>
+                <p className="text-sm font-semibold text-foreground">Escenarios interactivos</p>
               </div>
               <StatusBadge tone="neutral">{mode}</StatusBadge>
             </CardHeader>
             <CardContent className="grid gap-3">
               <Button
                 icon={<ShieldOff className="h-4 w-4" aria-hidden="true" />}
-                onClick={simulateFailure}
+                onClick={runFailureScenario}
                 variant={issuerOffline ? "secondary" : "danger"}
               >
-                Simular caida universidad
+                Probar caida universidad
               </Button>
               <Button
                 icon={<GitBranch className="h-4 w-4" aria-hidden="true" />}
-                onClick={simulateConsensus}
+                onClick={runConsensusScenario}
                 variant="secondary"
               >
-                Simular consenso
+                Probar consenso
               </Button>
               <Button
                 icon={<Database className="h-4 w-4" aria-hidden="true" />}
-                onClick={simulateReplication}
+                onClick={runReplicationScenario}
                 variant="secondary"
               >
-                Simular replicacion
+                Probar replicacion
               </Button>
               <Button
                 icon={<FileWarning className="h-4 w-4" aria-hidden="true" />}
-                onClick={simulateImmutability}
+                onClick={runImmutabilityScenario}
                 variant="secondary"
               >
-                Simular inmutabilidad
+                Probar inmutabilidad
               </Button>
-              <div className="rounded-md border border-border/55 bg-black/40 p-3">
+              <div className="rounded-md border border-border/55 bg-muted/50 p-3">
                 <p className="text-xs font-semibold text-foreground">
                   {issuerOffline
                     ? "La verificacion sigue disponible por las replicas de Ethereum."
@@ -422,7 +422,7 @@ export function AuditPage() {
                   return (
                     <div
                       className={cn(
-                        "rounded-md border border-border/55 bg-black/40 p-3",
+                        "rounded-md border border-border/55 bg-muted/50 p-3",
                         synced && "border-success/25 bg-success/10",
                         node.status === "lagging" && mode !== "replication" && "border-warning/30 bg-warning/10",
                       )}
@@ -476,7 +476,7 @@ export function AuditPage() {
                 ].map(([label, text], index) => (
                   <li
                     className={cn(
-                      "rounded-md border border-border/55 bg-black/35 p-3",
+                      "rounded-md border border-border/55 bg-muted/45 p-3",
                       mode === "consensus" && index <= 2 && "border-primary/30 bg-primary/10",
                     )}
                     key={label}
@@ -541,7 +541,7 @@ export function AuditPage() {
           <CardContent>
             <ol className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
               {latestEvents.map((event) => (
-                <li className="rounded-md border border-border/55 bg-black/40 p-3" key={event.id}>
+                <li className="rounded-md border border-border/55 bg-muted/50 p-3" key={event.id}>
                   <div className="flex items-center justify-between gap-3">
                     <span className="font-mono text-[11px] text-muted-foreground">
                       #{numberFormatter.format(event.blockNumber)}

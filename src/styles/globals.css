@@ -12,9 +12,20 @@
   html {
     max-width: 100%;
     overflow-x: hidden;
-    color-scheme: dark;
     font-family: theme("fontFamily.sans");
     text-rendering: optimizeLegibility;
+  }
+
+  html:not(.theme-view-transition):not(.theme-transitioning) {
+    transition: background-color 0.2s ease, color 0.2s ease;
+  }
+
+  html.light {
+    color-scheme: light;
+  }
+
+  html.dark {
+    color-scheme: dark;
   }
 
   body {
@@ -24,11 +35,12 @@
     min-height: 100vh;
     margin: 0;
     background:
-      radial-gradient(circle at 50% -15%, hsl(var(--primary) / 0.12), transparent 28rem),
-      linear-gradient(hsl(var(--border) / 0.18) 1px, transparent 1px),
-      linear-gradient(90deg, hsl(var(--border) / 0.13) 1px, transparent 1px),
+      radial-gradient(circle at 12% -8%, hsl(var(--primary) / 0.14), transparent 22rem),
+      radial-gradient(circle at 88% 0%, hsl(var(--accent) / 0.08), transparent 18rem),
+      linear-gradient(hsl(var(--border) / 0.22) 1px, transparent 1px),
+      linear-gradient(90deg, hsl(var(--border) / 0.16) 1px, transparent 1px),
       hsl(var(--background));
-    background-size: auto, 32px 32px, 32px 32px, auto;
+    background-size: auto, auto, 28px 28px, 28px 28px, auto;
     font-variant-numeric: tabular-nums;
   }
 
@@ -58,6 +70,27 @@
   .motion-opacity {
     will-change: opacity;
   }
+}
+
+html.theme-view-transition::view-transition-old(root),
+html.theme-view-transition::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+
+html.theme-view-transition::view-transition-old(root) {
+  z-index: 1;
+}
+
+html.theme-view-transition::view-transition-new(root) {
+  z-index: 2;
+}
+
+html.theme-transitioning,
+html.theme-transitioning * {
+  transition-duration: 1.6s !important;
+  transition-timing-function: cubic-bezier(0.45, 0.05, 0.55, 0.95) !important;
+  transition-property: background-color, color, border-color, outline-color, fill, stroke, box-shadow !important;
 }
 
 @media (prefers-reduced-motion: reduce) {

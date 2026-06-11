@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useGSAP } from "@gsap/react";
 import { gsap } from "gsap";
@@ -16,6 +16,7 @@ import {
   History,
   Link2,
   QrCode,
+  RefreshCw,
   RotateCcw,
   Search,
   ShieldAlert,
@@ -31,7 +32,9 @@ import { cn } from "@/lib/cn";
 import { formatDateTime, numberFormatter } from "@/lib/formatters";
 import { shortenHash } from "@/lib/hash";
 import { setMotionCompleteState, shouldSkipMotion } from "@/lib/motion";
+import { useWalletPermissionOptions } from "@/hooks/useWalletPermissionOptions";
 import { canRevokeCertificate } from "@/lib/permissions";
+import { canShowRevokeActions } from "@/lib/ui-permissions";
 import { useAppStore } from "@/store/app-store";
 import type { Certificate, CertificateType, Issuer } from "@/types/domain";
 
@@ -119,7 +122,7 @@ function SelectControl({
       </span>
       <select
         aria-label={ariaLabel}
-        className="h-8 w-full rounded-md border border-border/80 bg-black/35 px-3 text-xs font-semibold text-foreground outline-none shadow-[inset_0_1px_0_hsl(var(--foreground)/0.025)] transition-colors focus:border-primary/70 focus:ring-4 focus:ring-primary/15"
+        className="h-8 w-full rounded-md border border-border/80 bg-muted/45 px-3 text-xs font-semibold text-foreground outline-none shadow-[inset_0_1px_0_hsl(var(--foreground)/0.025)] transition-colors focus:border-primary/70 focus:ring-4 focus:ring-primary/15"
         onChange={(event) => onChange(event.target.value)}
         value={value}
       >
@@ -135,7 +138,7 @@ function SelectControl({
 
 function DetailSection({ children, title }: { children: ReactNode; title: string }) {
   return (
-    <div className="rounded-md border border-border/55 bg-black/38 p-3">
+    <div className="rounded-md border border-border/55 bg-muted/48 p-3">
       <p className="text-[11px] font-semibold uppercase text-muted-foreground">{title}</p>
       <div className="mt-2">{children}</div>
     </div>
@@ -144,7 +147,7 @@ function DetailSection({ children, title }: { children: ReactNode; title: string
 
 function HashBlock({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-md border border-border/55 bg-black/50 p-3" data-full-hash>
+    <div className="rounded-md border border-border/55 bg-muted/60 p-3" data-full-hash>
       <p className="text-[11px] font-semibold uppercase text-muted-foreground">{label}</p>
       <p className="mt-2 break-all font-mono text-[11px] leading-5 text-foreground">{value}</p>
     </div>
@@ -206,7 +209,12 @@ export function CertificatesPage() {
   const issuers = useAppStore((state) => state.issuers);
   const selectedNetwork = useAppStore((state) => state.selectedNetwork);
   const activeRole = useAppStore((state) => state.activeRole);
+  const activePersona = useAppStore((state) => state.activePersona);
   const addToast = useAppStore((state) => state.addToast);
+  const certificateHistorial = useAppStore((state) => state.certificateHistorial);
+  const fetchCertificateHistorial = useAppStore((state) => state.fetchCertificateHistorial);
+  const walletOptions = useWalletPermissionOptions();
+  const [historialLoading, setHistorialLoading] = useState(false);
   const setRoute = useAppStore((state) => state.setRoute);
   const reducedMotion = useReducedMotion();
   const [query, setQuery] = useState("");
@@ -303,8 +311,14 @@ export function CertificatesPage() {
 
   const filteredCertificates = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
+    const roleScopedCertificates =
+      activeRole === "student" && activePersona.studentId
+        ? certificates.filter((certificate) => certificate.studentId === activePersona.studentId)
+        : activeRole === "authorized_issuer" && activePersona.issuerId
+          ? certificates.filter((certificate) => certificate.issuerId === activePersona.issuerId)
+          : certificates;
 
-    return certificates
+    return roleScopedCertificates
       .filter((certificate) => {
         const searchable = [
           certificate.code,
@@ -330,6 +344,9 @@ export function CertificatesPage() {
       })
       .sort(compareBySort(sort));
   }, [
+    activePersona.issuerId,
+    activePersona.studentId,
+    activeRole,
     careerFilter,
     certificates,
     dateFilter,
@@ -352,10 +369,38 @@ export function CertificatesPage() {
   const selectedEvents = selectedCertificate
     ? eventsByCertificate.get(selectedCertificate.id) ?? []
     : [];
+  const selectedOnChainHistorial = selectedCertificate
+    ? certificateHistorial[selectedCertificate.code] ?? []
+    : [];
+
+  useEffect(() => {
+    if (!selectedCertificate?.code) {
+      return;
+    }
+
+    let cancelled = false;
+    setHistorialLoading(true);
+
+    void fetchCertificateHistorial(selectedCertificate.code).finally(() => {
+      if (!cancelled) {
+        setHistorialLoading(false);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [fetchCertificateHistorial, selectedCertificate?.code]);
   const qrCells = selectedCertificate ? buildQrCells(selectedCertificate) : [];
-  const canRevokeSelected = selectedCertificate
-    ? canRevokeCertificate(issuerById.get(selectedCertificate.issuerId), selectedCertificate, activeRole)
-    : false;
+  const canRevokeSelected =
+    canShowRevokeActions(activeRole) && selectedCertificate
+      ? canRevokeCertificate(
+          issuerById.get(selectedCertificate.issuerId),
+          selectedCertificate,
+          activeRole,
+          walletOptions,
+        )
+      : false;
 
   useGSAP(
     () => {
@@ -443,29 +488,30 @@ export function CertificatesPage() {
     });
   };
 
-  const simulatePdf = (certificate: Certificate) => {
+  const prepareLocalPdf = (certificate: Certificate) => {
     selectCertificate(certificate);
     addToast({
       title: "PDF preparado",
-      description: `${certificate.pdfName} se genero como descarga simulada.`,
+      description: `${certificate.pdfName} se preparo como descarga generada localmente.`,
       intent: "success",
     });
   };
 
-  const simulateQr = (certificate: Certificate) => {
+  const generateLocalQr = (certificate: Certificate) => {
     selectCertificate(certificate);
     addToast({
-      title: "QR simulado",
-      description: `QR publico generado para ${certificate.code}.`,
+      title: "QR generado localmente",
+      description: `QR publico generado localmente para ${certificate.code}.`,
       intent: "success",
     });
   };
 
   const focusHistory = (certificate: Certificate) => {
     selectCertificate(certificate);
+    void fetchCertificateHistorial(certificate.code);
     addToast({
-      title: "Historial enfocado",
-      description: "El panel de detalle muestra los eventos del certificado.",
+      title: "Historial on-chain",
+      description: "Consultando consultarHistorial() para este certificado.",
       intent: "info",
     });
   };
@@ -506,12 +552,12 @@ export function CertificatesPage() {
                 Certificados emitidos
               </h1>
               <p className="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground">
-                Gestiona certificados academicos anclados en Ethereum simulado, revisa hashes,
+                Gestiona certificados academicos con evidencia criptografica verificable, revisa hashes,
                 firmas digitales, eventos de trazabilidad y acciones publicas sin abandonar el
                 inventario.
               </p>
             </div>
-            <div className="grid min-w-48 gap-1 rounded-md border border-border/55 bg-black/45 p-3">
+            <div className="grid min-w-48 gap-1 rounded-md border border-border/55 bg-muted/55 p-3">
               <p className="text-xs font-semibold text-muted-foreground">Registro seleccionado</p>
               <p className="font-mono text-sm font-semibold text-foreground">
                 {selectedCertificate?.code ?? "Sin seleccion"}
@@ -627,7 +673,7 @@ export function CertificatesPage() {
                 value={sort}
               />
               <div className="grid content-end">
-                <div className="rounded-md border border-border/55 bg-black/35 px-3 py-2">
+                <div className="rounded-md border border-border/55 bg-muted/45 px-3 py-2">
                   <p className="text-[11px] font-semibold text-muted-foreground">Resultado</p>
                   <p className="mt-1 text-xs font-semibold text-foreground">
                     {filteredCertificates.length} de {certificates.length} certificados
@@ -644,7 +690,7 @@ export function CertificatesPage() {
               <div className="min-w-0">
                 <p className="text-sm font-semibold text-foreground">Tabla avanzada</p>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Acciones por fila para inspeccion, trazabilidad, copias y simulaciones.
+                  Acciones por fila para inspeccion, trazabilidad, copias y herramientas locales.
                 </p>
               </div>
               <StatusBadge tone="neutral">
@@ -653,11 +699,11 @@ export function CertificatesPage() {
             </CardHeader>
             <CardContent className="grid gap-3">
               <div
-                className="overflow-x-auto rounded-md border border-border/70 bg-black/40"
+                className="overflow-x-auto rounded-md border border-border/70 bg-muted/50"
                 data-testid="certificates-table"
               >
                 <table className="min-w-[980px] w-full border-collapse text-left text-xs">
-                  <thead className="bg-black/45 text-[11px] uppercase text-muted-foreground">
+                  <thead className="bg-muted/55 text-[11px] uppercase text-muted-foreground">
                     <tr>
                       {[
                         "Codigo",
@@ -681,11 +727,14 @@ export function CertificatesPage() {
                     {pagedCertificates.length ? (
                       pagedCertificates.map((certificate) => {
                         const isSelected = selectedCertificate?.id === certificate.id;
-                        const rowCanRevoke = canRevokeCertificate(
-                          issuerById.get(certificate.issuerId),
-                          certificate,
-                          activeRole,
-                        );
+                        const rowCanRevoke =
+                          canShowRevokeActions(activeRole) &&
+                          canRevokeCertificate(
+                            issuerById.get(certificate.issuerId),
+                            certificate,
+                            activeRole,
+                            walletOptions,
+                          );
 
                         return (
                           <tr
@@ -759,22 +808,22 @@ export function CertificatesPage() {
                                   Copiar enlace publico
                                 </Button>
                                 <Button
-                                  aria-label="Simular descarga PDF"
+                                  aria-label="Preparar PDF local"
                                   className="px-2"
                                   icon={<Download className="h-3.5 w-3.5" aria-hidden="true" />}
-                                  onClick={() => simulatePdf(certificate)}
+                                  onClick={() => prepareLocalPdf(certificate)}
                                   variant="secondary"
                                 >
-                                  Simular descarga PDF
+                                  Preparar PDF local
                                 </Button>
                                 <Button
-                                  aria-label="Simular QR"
+                                  aria-label="Generar QR local"
                                   className="px-2"
                                   icon={<QrCode className="h-3.5 w-3.5" aria-hidden="true" />}
-                                  onClick={() => simulateQr(certificate)}
+                                  onClick={() => generateLocalQr(certificate)}
                                   variant="secondary"
                                 >
-                                  Simular QR
+                                  Generar QR local
                                 </Button>
                                 {rowCanRevoke ? (
                                   <Button
@@ -803,7 +852,7 @@ export function CertificatesPage() {
                 </table>
               </div>
 
-              <div className="flex flex-col gap-3 rounded-md border border-border/55 bg-black/35 p-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-col gap-3 rounded-md border border-border/55 bg-muted/45 p-3 sm:flex-row sm:items-center sm:justify-between">
                 <p className="text-xs font-semibold text-muted-foreground">
                   Pagina {currentPage} de {totalPages} · {filteredCertificates.length} resultados
                 </p>
@@ -844,7 +893,7 @@ export function CertificatesPage() {
                       {selectedCertificate.code}
                     </h2>
                     <p className="mt-1 text-xs text-muted-foreground">
-                      Detalle de certificado, evidencia criptografica y panel de contrato.
+                      Detalle de certificado, evidencia criptografica y herramientas locales.
                     </p>
                   </div>
                   {canRevokeSelected ? (
@@ -855,9 +904,7 @@ export function CertificatesPage() {
                     >
                       Revocar
                     </Button>
-                  ) : (
-                    <StatusBadge tone="neutral">Solo lectura</StatusBadge>
-                  )}
+                  ) : null}
                 </CardHeader>
                 <CardContent className="grid gap-3">
                   <DetailSection title="Informacion academica">
@@ -905,11 +952,11 @@ export function CertificatesPage() {
                   <div className="grid gap-3">
                     <HashBlock label="Hash SHA-256 completo" value={selectedCertificate.documentHash} />
                     <HashBlock label="Hash registrado" value={selectedCertificate.blockchainHash} />
-                    <HashBlock label="Transaction hash" value={selectedCertificate.transactionHash} />
+                    <HashBlock label="Identificador de registro" value={selectedCertificate.transactionHash} />
                   </div>
 
                   <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_13rem]">
-                    <div className="rounded-md border border-border/55 bg-black/45 p-4">
+                    <div className="rounded-md border border-border/55 bg-muted/55 p-4">
                       <p className="text-[11px] font-semibold uppercase text-muted-foreground">
                         Vista tipo documento
                       </p>
@@ -936,8 +983,10 @@ export function CertificatesPage() {
                       </div>
                     </div>
 
-                    <div className="rounded-md border border-border/55 bg-black/45 p-4">
-                      <p className="text-[11px] font-semibold uppercase text-muted-foreground">QR simulado</p>
+                    <div className="rounded-md border border-border/55 bg-muted/55 p-4">
+                      <p className="text-[11px] font-semibold uppercase text-muted-foreground">
+                        QR generado localmente
+                      </p>
                       <div className="mt-3 grid aspect-square grid-cols-9 gap-1 rounded-md border border-border/55 bg-background p-3">
                         {qrCells.map((filled, index) => (
                           <span
@@ -956,16 +1005,16 @@ export function CertificatesPage() {
                     </div>
                   </div>
 
-                  <DetailSection title="Panel tecnico de smart contract">
-                    <FieldLine label="Metodo usado" value="emitirCertificado(bytes32 hash, address estudiante)" />
+                  <DetailSection title="Panel tecnico del certificado">
+                    <FieldLine label="Accion local" value="generar evidencia documental(hash, estudiante)" />
                     <FieldLine
                       label="Parametros"
                       value={`${selectedCertificate.code} · ${shortenHash(selectedCertificate.documentHash, 8)}`}
                     />
                     <FieldLine label="Resultado" value={statusLabels[selectedCertificate.status]} />
-                    <FieldLine label="Red" value={selectedNetwork} />
-                    <FieldLine label="Gas simulado" value="143.820 gas" />
-                    <FieldLine label="Confirmaciones" value="36 confirmaciones mock" />
+                    <FieldLine label="Entorno seleccionado" value={selectedNetwork} />
+                    <FieldLine label="Modo" value="Previsualizacion generada localmente" />
+                    <FieldLine label="Estado de evidencia" value="Evidencia calculada en la interfaz" />
                     <FieldLine
                       label="Numero de bloque"
                       value={numberFormatter.format(selectedCertificate.blockNumber)}
@@ -973,18 +1022,62 @@ export function CertificatesPage() {
                   </DetailSection>
 
                   <DetailSection title="Historial del certificado">
-                    {selectedEvents.length ? (
+                    <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                      <StatusBadge tone={selectedOnChainHistorial.length ? "online" : "warning"}>
+                        {selectedOnChainHistorial.length
+                          ? `${selectedOnChainHistorial.length} evento(s) on-chain`
+                          : "Sin historial on-chain"}
+                      </StatusBadge>
+                      <Button
+                        className="min-h-7 px-2 py-1"
+                        disabled={historialLoading || !selectedCertificate}
+                        icon={<RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />}
+                        onClick={() =>
+                          selectedCertificate
+                            ? void fetchCertificateHistorial(selectedCertificate.code)
+                            : undefined
+                        }
+                        variant="secondary"
+                      >
+                        {historialLoading ? "Consultando..." : "Consultar on-chain"}
+                      </Button>
+                    </div>
+
+                    {selectedOnChainHistorial.length ? (
+                      <ol className="grid gap-2">
+                        {selectedOnChainHistorial.map((entry) => (
+                          <li
+                            className="rounded-md border border-border/55 bg-muted/50 p-3"
+                            data-certificate-event
+                            key={entry.id}
+                          >
+                            <div className="flex items-center justify-between gap-3">
+                              <StatusBadge tone="online">On-chain</StatusBadge>
+                              <span className="font-mono text-[11px] text-muted-foreground">
+                                {entry.tipoEvento}
+                              </span>
+                            </div>
+                            <p className="mt-2 text-xs font-semibold text-foreground">{entry.method}</p>
+                            <p className="mt-1 text-[11px] leading-5 text-muted-foreground">{entry.detalle}</p>
+                            <p className="mt-2 font-mono text-[11px] text-muted-foreground">
+                              {shortenHash(entry.actor, 8)}
+                            </p>
+                            <p className="mt-1 text-[11px] text-muted-foreground">
+                              {formatDateTime(entry.fecha)}
+                            </p>
+                          </li>
+                        ))}
+                      </ol>
+                    ) : selectedEvents.length ? (
                       <ol className="grid gap-2">
                         {selectedEvents.map((event) => (
                           <li
-                            className="rounded-md border border-border/55 bg-black/40 p-3"
+                            className="rounded-md border border-border/55 bg-muted/50 p-3"
                             data-certificate-event
                             key={event.id}
                           >
                             <div className="flex items-center justify-between gap-3">
-                              <span className="font-mono text-[11px] text-muted-foreground">
-                                #{numberFormatter.format(event.blockNumber)}
-                              </span>
+                              <StatusBadge tone="neutral">Local</StatusBadge>
                               <span className="font-mono text-[11px] text-muted-foreground">
                                 {shortenHash(event.transactionHash, 6)}
                               </span>
@@ -999,7 +1092,9 @@ export function CertificatesPage() {
                       </ol>
                     ) : (
                       <p className="text-xs leading-5 text-muted-foreground">
-                        Sin eventos asociados en el ledger mock.
+                        {historialLoading
+                          ? "Consultando consultarHistorial() en el contrato..."
+                          : "Sin eventos on-chain ni locales para este certificado."}
                       </p>
                     )}
                   </DetailSection>
@@ -1007,7 +1102,7 @@ export function CertificatesPage() {
               </div>
             ) : (
               <CardContent>
-                <div className="rounded-md border border-border/55 bg-black/40 p-4 text-sm text-muted-foreground">
+                <div className="rounded-md border border-border/55 bg-muted/50 p-4 text-sm text-muted-foreground">
                   Selecciona un certificado para revisar su detalle.
                 </div>
               </CardContent>

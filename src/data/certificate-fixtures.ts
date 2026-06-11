@@ -245,7 +245,7 @@ export const certificates: Certificate[] = certificateSeed.map(
       observations:
         status === "manipulated"
           ? "Caso marcado para demostrar deteccion de documento alterado."
-          : "Registro academico mock para defensa de sistemas distribuidos.",
+          : "Registro academico precargado para defensa de sistemas distribuidos.",
       receptionSignature:
         status === "pending_reception" ? undefined : `student-reception-${student.id}-${code}`,
       issuerSignature: `issuer-signature-${issuer.id}-${code}`,
@@ -287,7 +287,7 @@ export const nftAcademicTokens: NftAcademicToken[] = [
     tokenId: "NFT-ACAD-0001",
     certificateId: "certificate-008",
     ownerStudentId: "student-valeria",
-    contractAddress: "0x7777777777777777777777777777777777777777",
+    contractAddress: "0x5FbDB2315678afecb367f032d93F642f64180aa3",
     metadataUri: "ipfs://certichain-academico/certificate-008.json",
     mintedAt: "2026-05-18T18:30:00.000Z",
     transactionHash: tx(7001),
@@ -324,7 +324,7 @@ export const verificationAttempts: VerificationAttempt[] = [
     verifierEntityId: "verifier-government",
     certificateCode: "CERT-2026-0007",
     documentHash: hash(8801),
-    source: "pdf_mock",
+    source: "pdf",
     resultStatus: "manipulated",
     matchedCertificateId: "certificate-007",
     attemptedAt: "2026-06-02T12:05:00.000Z",
@@ -346,12 +346,12 @@ export const verificationAttempts: VerificationAttempt[] = [
     verifierEntityId: "verifier-hr",
     certificateCode: "CERT-2026-0010",
     documentHash: hash(8802),
-    source: "pdf_mock",
+    source: "pdf",
     resultStatus: "manipulated",
     matchedCertificateId: "certificate-010",
     attemptedAt: "2026-06-04T10:22:00.000Z",
     ipLabel: "rrhh-oru-01",
-    notes: "PDF mock no coincide con SHA-256 registrado.",
+    notes: "PDF observado no coincide con SHA-256 registrado.",
   },
   {
     id: "verify-006",
@@ -370,7 +370,7 @@ export const verificationAttempts: VerificationAttempt[] = [
     verifierEntityId: "verifier-private-company",
     certificateCode: "CERT-2026-0012",
     documentHash: hash(8803),
-    source: "pdf_mock",
+    source: "pdf",
     resultStatus: "manipulated",
     matchedCertificateId: "certificate-012",
     attemptedAt: "2026-06-06T11:44:00.000Z",

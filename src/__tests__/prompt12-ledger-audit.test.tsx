@@ -1,13 +1,16 @@
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it } from "vitest";
+import { AppProviders } from "@/app/providers";
 import App from "@/app/App";
+import { AuditPage } from "@/features/audit/AuditPage";
 import { useAppStore } from "@/store/app-store";
 
 describe("Prompt 12 ledger and distributed audit", () => {
   beforeEach(() => {
     window.localStorage.clear();
     useAppStore.getState().resetDemoData();
+    useAppStore.getState().setActiveRole("academic_admin");
   });
 
   it("renders ledger events from the store with filters, timeline and expandable detail", async () => {
@@ -22,6 +25,10 @@ describe("Prompt 12 ledger and distributed audit", () => {
     expect(within(page).getByTestId("ledger-events-table")).toHaveTextContent(event?.id ?? "");
     expect(within(page).getByTestId("ledger-events-table")).toHaveTextContent(event?.transactionHash.slice(0, 8) ?? "");
     expect(within(page).getByTestId("ledger-events-table")).toHaveTextContent("Metodo");
+    expect(within(page).getByTestId("ledger-events-table")).toHaveTextContent("Origen");
+    expect(
+      within(page).getByRole("button", { name: /sincronizar historial on-chain/i }),
+    ).toBeInTheDocument();
     expect(within(page).getByText(/timeline de eventos/i)).toBeInTheDocument();
 
     await user.type(within(page).getByLabelText(/filtro por actor/i), "verifier");
@@ -37,11 +44,14 @@ describe("Prompt 12 ledger and distributed audit", () => {
     expect(detail).toHaveTextContent("Certificado relacionado");
   });
 
-  it("renders an interactive distributed audit network with resilience simulations", async () => {
+  it("renders an interactive distributed audit network with resilience scenarios", async () => {
     const user = userEvent.setup();
-    useAppStore.getState().setRoute("audit");
 
-    render(<App />);
+    render(
+      <AppProviders>
+        <AuditPage />
+      </AppProviders>,
+    );
 
     const page = screen.getByTestId("distributed-audit-workspace");
     expect(within(page).getByRole("heading", { name: /auditoria distribuida/i })).toBeInTheDocument();
@@ -53,18 +63,18 @@ describe("Prompt 12 ledger and distributed audit", () => {
     expect(within(page).getByText(/sistema tradicional/i)).toBeInTheDocument();
     expect(within(page).getByText(/sistema descentralizado/i)).toBeInTheDocument();
 
-    await user.click(within(page).getByRole("button", { name: /simular caida universidad/i }));
+    await user.click(within(page).getByRole("button", { name: /probar caida universidad/i }));
     expect(within(page).getByTestId("distributed-network")).toHaveTextContent("Fuera de linea");
     expect(within(page).getByText(/verificacion sigue disponible/i)).toBeInTheDocument();
 
-    await user.click(within(page).getByRole("button", { name: /simular consenso/i }));
+    await user.click(within(page).getByRole("button", { name: /probar consenso/i }));
     expect(within(page).getByTestId("consensus-timeline")).toHaveTextContent("Propuesta");
     expect(within(page).getByTestId("consensus-timeline")).toHaveTextContent("Confirmacion");
 
-    await user.click(within(page).getByRole("button", { name: /simular replicacion/i }));
+    await user.click(within(page).getByRole("button", { name: /probar replicacion/i }));
     expect(within(page).getByTestId("replicated-ledger")).toHaveTextContent("Replica sincronizada");
 
-    await user.click(within(page).getByRole("button", { name: /simular inmutabilidad/i }));
+    await user.click(within(page).getByRole("button", { name: /probar inmutabilidad/i }));
     expect(within(page).getByText(/bloque protegido/i)).toBeInTheDocument();
 
     for (const concept of [

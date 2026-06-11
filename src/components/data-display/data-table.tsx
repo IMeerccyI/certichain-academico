@@ -16,9 +16,9 @@ type DataTableProps<Row> = {
 
 export function DataTable<Row>({ columns, getRowKey, rows }: DataTableProps<Row>) {
   return (
-    <div className="overflow-x-auto rounded-lg border border-border bg-black/30">
+    <div className="overflow-x-auto rounded-lg border border-border bg-muted/40">
       <table className="w-full min-w-[38rem] text-left text-xs">
-        <thead className="bg-black/55 text-muted-foreground">
+        <thead className="bg-muted/65 text-muted-foreground">
           <tr>
             {columns.map((column) => (
               <th
